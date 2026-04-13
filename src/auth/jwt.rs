@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
-    pub sub: i32,         // user id
+    pub sub: i32,
     pub username: String,
+    pub first_name: String,
     pub exp: u64,
     pub iat: u64,
 }
@@ -25,16 +26,16 @@ impl JwtService {
         }
     }
 
-    pub fn generate(&self, user_id: i32, username: &str) -> Result<String> {
+    pub fn generate(&self, user_id: i32, username: &str, first_name: &str) -> Result<String> {
         let now = jsonwebtoken::get_current_timestamp();
         let claims = Claims {
             sub: user_id,
             username: username.to_string(),
+            first_name: first_name.to_string(),
             iat: now,
             exp: now + self.expiry_hours * 3600,
         };
-        let token = encode(&Header::default(), &claims, &self.encoding_key)?;
-        Ok(token)
+        Ok(encode(&Header::default(), &claims, &self.encoding_key)?)
     }
 
     pub fn verify(&self, token: &str) -> Result<Claims> {

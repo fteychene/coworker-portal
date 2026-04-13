@@ -15,7 +15,8 @@ type User = {
 }
 ```
 
-Service : A commercial offer that user subscribe. Example : (10 days oupons, 1 Month full access, 1 Month 10 days access, ...)
+Service : A commercial offer that user subscribe. Example : (10 days coupons, 1 Month full access, 1 Month 10 days access, ...)
+This app owns the `service` table. Multiple services can map to the same `externalServiceId`, allowing different voucher specs for the same billing product.
 ```typescript
 type Service = {
     id: int
@@ -23,6 +24,8 @@ type Service = {
     description: string
     price: float
     voucherSpec: VoucherSpec
+    externalServiceId: int  // references billjobs_service.id — used only when writing billjobs_billline
+    isAvailable: boolean
 }
 
 type VoucherSpec = 
@@ -122,8 +125,31 @@ The counter is **global** (not per-month): a new month does not reset it. Exampl
 All int are stored as int4.
 
 This app owns the schema and data for:
-- `VoucherSpec` — stored in `voucher_spec` table
-- `Voucher` — stored in `voucher` table (id, bill_id, unify_id, code, created_at, duration, status). `status` is the only mutable field, updated by the validity check command.
+
+**`service`** → `Service`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | int4 | |
+| `name` | varchar(256) | |
+| `description` | text | |
+| `price` | float8 | |
+| `kind` | varchar(10) | `'Monthly'` or `'Book'` |
+| `amount` | int4 | null for Monthly; number of vouchers for Book |
+| `duration` | int4 | null for Monthly; hours per voucher for Book |
+| `external_service_id` | int4 | references billjobs_service.id |
+| `is_available` | boolean | filter on listing |
+
+**`voucher`** → `Voucher`
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | int4 | |
+| `bill_id` | int4 | |
+| `unify_id` | text | |
+| `unify_create_time` | int8 | |
+| `code` | text | |
+| `created_at` | timestamptz | |
+| `duration` | int4 | hours |
+| `status` | text | mutable; updated by validity check |
 
 ### Postgres — owned by external app (django-billjobs)
 
@@ -142,15 +168,11 @@ This app reads from (no schema ownership):
 | `email` | varchar(254) | |
 | `is_active` | boolean | filter on login |
 
-**`billjobs_service`** → `Service`
+**`billjobs_service`** — referenced by `service.external_service_id`; no longer read directly by this app
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | int4 | |
+| `id` | int4 | only used as FK target in billjobs_billline |
 | `reference` | varchar(5) | |
-| `name` | varchar(128) | |
-| `description` | varchar(256) | |
-| `price` | float8 | |
-| `is_available` | boolean | filter on listing |
 
 This app writes to (anti-pattern, compatible with shared invoicing schema):
 
