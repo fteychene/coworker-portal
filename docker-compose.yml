@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: coworking
+      POSTGRES_PASSWORD: coworking
+      POSTGRES_DB: coworking
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./fixtures:/docker-entrypoint-initdb.d
+
+volumes:
+  postgres_data:

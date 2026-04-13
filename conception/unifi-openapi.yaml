@@ -1,0 +1,850 @@
+openapi: 3.0.3
+info:
+  title: UniFi Network Controller API
+  description: |
+    Reverse-engineered API for the Ubiquiti UniFi Network controller.
+    Covers authentication, vouchers, guests, sessions, and sites.
+
+    **Classic controllers** (UCK, self-hosted): base path is `/api`
+    **UDM / UniFi OS controllers**: prefix all paths with `/proxy/network`
+
+    Authentication uses cookie-based sessions. Call `POST /api/login` first
+    and include the returned `unifises` cookie in all subsequent requests.
+  version: "1.0.0"
+  contact:
+    name: Community reference
+    url: https://github.com/Art-of-WiFi/UniFi-API-client
+
+servers:
+  - url: https://{host}:{port}
+    description: Classic controller (UCK, self-hosted)
+    variables:
+      host:
+        default: 192.168.1.1
+      port:
+        default: "8443"
+  - url: https://{host}/proxy/network
+    description: UDM / UDM-Pro / UniFi OS controller
+    variables:
+      host:
+        default: 192.168.1.1
+
+tags:
+  - name: auth
+    description: Authentication
+  - name: sites
+    description: Site management
+  - name: vouchers
+    description: Hotspot voucher management
+  - name: guests
+    description: Guest device authorization
+  - name: sessions
+    description: Hotspot session statistics
+
+paths:
+
+  # ---------------------------------------------------------------------------
+  # Authentication
+  # ---------------------------------------------------------------------------
+
+  /api/login:
+    post:
+      tags: [auth]
+      summary: Login (classic controller)
+      operationId: login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        "200":
+          description: Login successful. Sets session cookie `unifises`.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: unifises=abc123; Path=/; HttpOnly
+        "400":
+          description: Invalid credentials
+        "401":
+          description: Unauthorized
+
+  /api/auth/login:
+    post:
+      tags: [auth]
+      summary: Login (UDM / UniFi OS)
+      operationId: loginUdm
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        "200":
+          description: Login successful. Sets session cookie `TOKEN`.
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+                example: TOKEN=abc123; Path=/; HttpOnly
+        "401":
+          description: Invalid credentials
+
+  /logout:
+    post:
+      tags: [auth]
+      summary: Logout (classic controller)
+      operationId: logout
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+
+  /api/auth/logout:
+    post:
+      tags: [auth]
+      summary: Logout (UDM / UniFi OS)
+      operationId: logoutUdm
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: Logged out successfully
+
+  # ---------------------------------------------------------------------------
+  # Sites
+  # ---------------------------------------------------------------------------
+
+  /api/self/sites:
+    get:
+      tags: [sites]
+      summary: List sites accessible to the current user
+      operationId: listSites
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of sites
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteListResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/stat/sites:
+    get:
+      tags: [sites]
+      summary: List all sites with statistics
+      operationId: statSites
+      security:
+        - cookieAuth: []
+      responses:
+        "200":
+          description: List of sites with health stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SiteListResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------------
+  # Vouchers
+  # ---------------------------------------------------------------------------
+
+  /api/s/{site}/stat/voucher:
+    post:
+      tags: [vouchers]
+      summary: List vouchers
+      operationId: listVouchers
+      description: Returns hotspot vouchers for the site. Optionally filtered by creation time.
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/site'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                create_time:
+                  type: integer
+                  format: int64
+                  description: Unix timestamp (seconds). Only return vouchers created at or after this time.
+                  example: 1709251200
+      responses:
+        "200":
+          description: List of vouchers
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherListResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/s/{site}/cmd/hotspot:
+    post:
+      tags: [vouchers, guests]
+      summary: Hotspot commands (create/revoke vouchers, extend guest sessions)
+      operationId: hotspotCommand
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/site'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CreateVoucherCommand'
+                - $ref: '#/components/schemas/DeleteVoucherCommand'
+                - $ref: '#/components/schemas/ExtendGuestCommand'
+              discriminator:
+                propertyName: cmd
+                mapping:
+                  create-voucher: '#/components/schemas/CreateVoucherCommand'
+                  delete-voucher: '#/components/schemas/DeleteVoucherCommand'
+                  extend: '#/components/schemas/ExtendGuestCommand'
+      responses:
+        "200":
+          description: Command result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CreateVoucherResponse'
+                  - $ref: '#/components/schemas/BooleanResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------------
+  # Guests
+  # ---------------------------------------------------------------------------
+
+  /api/s/{site}/stat/guest:
+    post:
+      tags: [guests]
+      summary: List active guest devices
+      operationId: listGuests
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/site'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                within:
+                  type: integer
+                  description: Only return guests seen within the last N hours. Omit for all time.
+                  example: 24
+      responses:
+        "200":
+          description: List of guest devices with valid access
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GuestListResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/s/{site}/cmd/stamgr:
+    post:
+      tags: [guests]
+      summary: Station manager commands (authorize / unauthorize guests)
+      operationId: stationManagerCommand
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/site'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/AuthorizeGuestCommand'
+                - $ref: '#/components/schemas/UnauthorizeGuestCommand'
+              discriminator:
+                propertyName: cmd
+                mapping:
+                  authorize-guest: '#/components/schemas/AuthorizeGuestCommand'
+                  unauthorize-guest: '#/components/schemas/UnauthorizeGuestCommand'
+      responses:
+        "200":
+          description: Command result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooleanResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+  # ---------------------------------------------------------------------------
+  # Sessions
+  # ---------------------------------------------------------------------------
+
+  /api/s/{site}/stat/session:
+    post:
+      tags: [sessions]
+      summary: List hotspot sessions
+      operationId: listSessions
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/site'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                type:
+                  type: string
+                  enum: [all, guest, user]
+                  default: all
+                  description: Filter sessions by client type
+                start:
+                  type: integer
+                  format: int64
+                  description: Unix timestamp — only sessions starting after this time
+                  example: 1709251200
+                end:
+                  type: integer
+                  format: int64
+                  description: Unix timestamp — only sessions ending before this time
+                  example: 1711929600
+                mac:
+                  type: string
+                  description: Filter by client MAC address
+                  example: "aa:bb:cc:dd:ee:ff"
+      responses:
+        "200":
+          description: List of hotspot sessions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionListResponse'
+        "401":
+          $ref: '#/components/responses/Unauthorized'
+
+# =============================================================================
+# Components
+# =============================================================================
+
+components:
+
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: unifises
+      description: Session cookie obtained from POST /api/login. UDM controllers use the `TOKEN` cookie instead.
+
+  parameters:
+    site:
+      name: site
+      in: path
+      required: true
+      schema:
+        type: string
+        default: default
+      description: UniFi site name (visible in the controller URL, e.g. `default`)
+
+  responses:
+    Unauthorized:
+      description: Session expired or not authenticated
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  schemas:
+
+    # -------------------------------------------------------------------------
+    # Generic wrappers
+    # -------------------------------------------------------------------------
+
+    Meta:
+      type: object
+      properties:
+        rc:
+          type: string
+          enum: [ok, error]
+          description: Result code
+        msg:
+          type: string
+          description: Error message (only present when rc = error)
+
+    BooleanResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items: {}
+
+    ErrorResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+
+    # -------------------------------------------------------------------------
+    # Auth
+    # -------------------------------------------------------------------------
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+          example: secret
+
+    # -------------------------------------------------------------------------
+    # Sites
+    # -------------------------------------------------------------------------
+
+    Site:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: MongoDB ObjectId
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+        name:
+          type: string
+          description: Internal site identifier used in API paths
+          example: default
+        desc:
+          type: string
+          description: Human-readable site name
+          example: My Home Network
+        attr_hidden_id:
+          type: string
+        attr_no_delete:
+          type: boolean
+        role:
+          type: string
+          example: admin
+
+    SiteListResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Site'
+
+    # -------------------------------------------------------------------------
+    # Vouchers
+    # -------------------------------------------------------------------------
+
+    Voucher:
+      type: object
+      properties:
+        _id:
+          type: string
+          description: MongoDB ObjectId
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+        site_id:
+          type: string
+          example: 5f3a2b1c4d5e6f7a8b9c0d1f
+        code:
+          type: string
+          description: Raw 10-digit voucher code. Display as XXXXX-XXXXX.
+          example: "0123456789"
+        quota:
+          type: integer
+          description: "0 = unlimited uses, 1 = single-use, n = exactly n uses"
+          example: 1
+        duration:
+          type: integer
+          description: Validity window in minutes after first activation
+          example: 44640
+        used:
+          type: integer
+          description: Number of times the voucher has been used
+          example: 1
+        create_time:
+          type: integer
+          format: int64
+          description: Unix timestamp of voucher creation
+          example: 1772454980
+        admin_name:
+          type: string
+          description: Username of the administrator who created the voucher
+          example: admin
+        status:
+          type: string
+          enum: [VALID_ONE, VALID_MULTI, USED_MULTIPLE]
+          description: |
+            - VALID_ONE: valid, single-use, not yet used
+            - VALID_MULTI: valid, multi-use, not yet exhausted
+            - USED_MULTIPLE: fully consumed
+          example: VALID_ONE
+        status_expires:
+          type: integer
+          format: int64
+          description: Seconds until status expires. 0 or negative means not started or already expired.
+          example: 1561158
+        note:
+          type: string
+          description: Optional free-text label
+          example: "day pass"
+        start_time:
+          type: integer
+          format: int64
+          description: Unix timestamp of first activation. Absent if never used.
+          example: 1772800895
+        end_time:
+          type: integer
+          format: int64
+          description: Unix timestamp of last session end. Absent if never used.
+          example: 1775479295
+        for_hotspot:
+          type: boolean
+          description: Whether the voucher is for hotspot use
+          example: true
+        qos_overwrite:
+          type: boolean
+          description: Whether this voucher overrides site-wide QoS settings
+          example: false
+        qos_usage_quota:
+          type: string
+          description: Data transfer cap in MB. Stored as string despite being numeric.
+          example: "1024"
+        qos_rate_max_up:
+          type: integer
+          description: Upload speed limit in kbps
+          example: 5000
+        qos_rate_max_down:
+          type: integer
+          description: Download speed limit in kbps
+          example: 10000
+
+    VoucherListResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Voucher'
+
+    CreateVoucherCommand:
+      type: object
+      required: [cmd, expire_number, expire_unit]
+      properties:
+        cmd:
+          type: string
+          enum: [create-voucher]
+        note:
+          type: string
+          description: Optional label
+          example: "Test"
+        n:
+          type: integer
+          description: Number of vouchers to generate
+          default: 1
+          example: 1
+        quota:
+          type: integer
+          description: "0 = unlimited, 1 = single-use, n = n uses"
+          default: 1
+          example: 2
+        expire_number:
+          type: integer
+          description: Numeric part of the expiration duration
+          example: 24
+        expire_unit:
+          type: integer
+          description: "Unit multiplier: 1 = minute, 60 = hour, 3600 = day"
+          enum: [1, 60, 3600]
+          example: 60
+        up:
+          type: integer
+          nullable: true
+          description: Upload speed limit in kbps. Null for unlimited.
+          example: null
+        down:
+          type: integer
+          nullable: true
+          description: Download speed limit in kbps. Null for unlimited.
+          example: null
+        bytes:
+          type: integer
+          description: Data transfer cap in MB
+          example: 1024
+
+    CreateVoucherResponse:
+      type: object
+      example:
+        meta:
+          rc: "ok"
+        data:
+          - create_time: 1775826393
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              create_time:
+                type: integer
+                format: int64
+                description: Unix timestamp of the batch creation (use to retrieve the batch via stat/voucher)
+                example: 1775826393
+
+    DeleteVoucherCommand:
+      type: object
+      required: [cmd, _id]
+      properties:
+        cmd:
+          type: string
+          enum: [delete-voucher]
+        _id:
+          type: string
+          description: The `_id` of the voucher to revoke
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+
+    # -------------------------------------------------------------------------
+    # Guests
+    # -------------------------------------------------------------------------
+
+    Guest:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+        site_id:
+          type: string
+          example: 5f3a2b1c4d5e6f7a8b9c0d1f
+        mac:
+          type: string
+          example: "aa:bb:cc:dd:ee:ff"
+        ip:
+          type: string
+          example: "192.168.1.100"
+        hostname:
+          type: string
+          example: "my-laptop"
+        first_seen:
+          type: integer
+          format: int64
+          example: 1709251200
+        last_seen:
+          type: integer
+          format: int64
+          example: 1709337600
+        assoc_time:
+          type: integer
+          format: int64
+          example: 1709337600
+        authorized:
+          type: boolean
+          example: true
+        authorized_at:
+          type: integer
+          format: int64
+          description: Unix timestamp when the guest was authorized
+          example: 1709337600
+        authorized_by:
+          type: string
+          description: Method of authorization (e.g. voucher code)
+          example: "01234-56789"
+        minutes:
+          type: integer
+          description: Remaining authorized duration in minutes
+          example: 60
+        name:
+          type: string
+          description: Name associated with the voucher used to authorize this guest
+          example: "John Doe"
+        start:
+          type: integer
+          format: int64
+          description: Unix timestamp when the guest session started (first activation)
+          example: 1709337600
+        end:
+          type: integer
+          format: int64
+          description: Unix timestamp when the guest session ended
+          example: 1709373600
+        expired:
+          type: boolean
+          description: Whether the guest session has expired
+          example: false
+        voucher_id:
+          type: string
+          description: The `_id` of the voucher used to authorize this guest
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+        qos_rate_max_up:
+          type: integer
+          description: Upload limit in kbps (0 = unlimited)
+          example: 5000
+        qos_rate_max_down:
+          type: integer
+          description: Download limit in kbps (0 = unlimited)
+          example: 10000
+        qos_usage_quota:
+          type: integer
+          description: Data cap in MB
+          example: 1024
+        rx_bytes:
+          type: integer
+          format: int64
+          example: 104857600
+        tx_bytes:
+          type: integer
+          format: int64
+          example: 52428800
+
+    GuestListResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Guest'
+
+    AuthorizeGuestCommand:
+      type: object
+      required: [cmd, mac, minutes]
+      properties:
+        cmd:
+          type: string
+          enum: [authorize-guest]
+        mac:
+          type: string
+          example: "aa:bb:cc:dd:ee:ff"
+        minutes:
+          type: integer
+          description: Duration of authorization in minutes
+          example: 60
+        up:
+          type: integer
+          description: Upload speed limit in kbps
+          example: 5000
+        down:
+          type: integer
+          description: Download speed limit in kbps
+          example: 10000
+        bytes:
+          type: integer
+          description: Data transfer cap in MB
+          example: 1024
+        ap_mac:
+          type: string
+          description: AP MAC to associate the authorization with
+          example: "bb:cc:dd:ee:ff:00"
+
+    UnauthorizeGuestCommand:
+      type: object
+      required: [cmd, mac]
+      properties:
+        cmd:
+          type: string
+          enum: [unauthorize-guest]
+        mac:
+          type: string
+          example: "aa:bb:cc:dd:ee:ff"
+
+    ExtendGuestCommand:
+      type: object
+      required: [cmd, _id]
+      properties:
+        cmd:
+          type: string
+          enum: [extend]
+        _id:
+          type: string
+          description: The `_id` of the guest session to extend
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+
+    # -------------------------------------------------------------------------
+    # Sessions
+    # -------------------------------------------------------------------------
+
+    HotspotSession:
+      type: object
+      properties:
+        _id:
+          type: string
+          example: 5f3a2b1c4d5e6f7a8b9c0d1e
+        site_id:
+          type: string
+          example: 5f3a2b1c4d5e6f7a8b9c0d1f
+        mac:
+          type: string
+          example: "aa:bb:cc:dd:ee:ff"
+        ip:
+          type: string
+          example: "192.168.1.100"
+        assoc_time:
+          type: integer
+          format: int64
+          description: Unix timestamp of session start
+          example: 1709251200
+        latest_assoc_time:
+          type: integer
+          format: int64
+          description: Unix timestamp of most recent re-association
+          example: 1709337600
+        duration:
+          type: integer
+          format: int64
+          description: Session duration in seconds
+          example: 3600
+        rx_bytes:
+          type: integer
+          format: int64
+          example: 104857600
+        tx_bytes:
+          type: integer
+          format: int64
+          example: 52428800
+        rx_packets:
+          type: integer
+          format: int64
+          example: 75000
+        tx_packets:
+          type: integer
+          format: int64
+          example: 60000
+
+    SessionListResponse:
+      type: object
+      properties:
+        meta:
+          $ref: '#/components/schemas/Meta'
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/HotspotSession'
