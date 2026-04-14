@@ -13,6 +13,7 @@ pub enum AppError {
     NotFound,
 
     #[error("Unauthorized")]
+    #[allow(dead_code)]
     Unauthorized,
 }
 

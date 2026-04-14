@@ -18,7 +18,6 @@ pub fn router() -> OpenApiRouter<AppState> {
 #[derive(Debug, Clone)]
 pub struct CurrentUser {
     pub id: i32,
-    pub username: String,
     pub first_name: String,
 }
 
@@ -43,7 +42,6 @@ impl FromRequestParts<AppState> for CurrentUser {
 
         Ok(CurrentUser {
             id: claims.sub,
-            username: claims.username,
             first_name: claims.first_name,
         })
     }

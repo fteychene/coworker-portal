@@ -46,7 +46,6 @@ struct UnifyVoucherDto {
     id: String,
     code: String,
     duration: i32,       // minutes
-    create_time: i64,
     status: String,
     status_expires: Option<i64>,
 }
