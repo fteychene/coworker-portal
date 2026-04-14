@@ -1,8 +1,6 @@
 use axum::{
     Json,
     extract::{Path, State},
-    http::StatusCode,
-    response::IntoResponse,
 };
 use serde::Serialize;
 use sqlx::FromRow;
@@ -35,7 +33,7 @@ pub struct VoucherCheckResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/bills/{id}/vouchers/check",
+    path = "/bills/{id}/vouchers/check",
     tag = "Vouchers",
     security(("bearer_auth" = [])),
     params(
@@ -82,43 +80,26 @@ pub async fn check_vouchers(
         .await
         .map_err(|e| AppError::Unify(e.to_string()))?;
 
-    let data = rows
-        .into_iter()
-        .map(|r| {
-            let status = statuses
-                .get(&r.unify_id)
-                .cloned()
-                .unwrap_or(VoucherStatus::Unknown);
-            VoucherStatusResponse {
-                unify_id: r.unify_id,
-                code: crate::domain::format_code(&r.code),
-                duration: r.duration,
-                status: status.as_str().to_string(),
-            }
-        })
-        .collect();
+    let mut data = Vec::with_capacity(rows.len());
+    for r in rows {
+        let status = statuses
+            .get(&r.unify_id)
+            .cloned()
+            .unwrap_or(VoucherStatus::Unknown);
+
+        sqlx::query("UPDATE voucher SET status = $1 WHERE unify_id = $2")
+            .bind(status.as_str())
+            .bind(&r.unify_id)
+            .execute(&state.db)
+            .await?;
+
+        data.push(VoucherStatusResponse {
+            unify_id: r.unify_id,
+            code: crate::domain::format_code(&r.code),
+            duration: r.duration,
+            status: status.as_str().to_string(),
+        });
+    }
 
     Ok(Json(VoucherCheckResponse { data }))
-}
-
-#[utoipa::path(
-    get,
-    path = "/api/bills/{id}/pdf",
-    tag = "Vouchers",
-    security(("bearer_auth" = [])),
-    params(
-        ("id" = i32, Path, description = "Bill ID"),
-    ),
-    responses(
-        (status = 501, description = "Not yet implemented"),
-        (status = 401, description = "Unauthorized"),
-    )
-)]
-pub async fn generate_pdf(
-    _state: State<AppState>,
-    _user: CurrentUser,
-    Path(_bill_id): Path<i32>,
-) -> impl IntoResponse {
-    // TODO: PDF generation — template TBD (see DOMAIN.md Features > Generate voucher PDF)
-    (StatusCode::NOT_IMPLEMENTED, "PDF generation not yet implemented")
 }

@@ -47,7 +47,7 @@ pub struct ServicesResponse {
 
 #[utoipa::path(
     get,
-    path = "/api/services",
+    path = "/services",
     tag = "Services",
     security(("bearer_auth" = [])),
     responses(

@@ -1,6 +1,5 @@
 INSERT INTO
     billjobs_bill (
-        id, 
         user_id,
         "number",
         "isPaid",
@@ -11,7 +10,6 @@ INSERT INTO
     )
 VALUES
     (
-        947,
         1,
         'F201801971',
         true,
@@ -23,7 +21,6 @@ VALUES
         'Admin billing'
     ),
     (
-        949,
         2,
         'F201801973',
         true,
@@ -35,7 +32,6 @@ VALUES
         'Alice billing'
     ),
     (
-        990,
         3,
         'F2018031013',
         true,
@@ -50,9 +46,9 @@ VALUES
 INSERT INTO
     billjobs_billline (bill_id, service_id, quantity, total, note)
 VALUES
-    (947, 7, 1, 230.0, 'Decembre 2017'),
-    (947, 7, 1, 230.0, 'Janvier 2018'),
-    (949, 7, 2, 13.0, ''),
-    (949, 7, 1, 12.5, ''),
-    (990, 7, 1, 110.0, ''),
-    (990, 7, 2, 80.0, '');
+    (1, 7, 1, 230.0, 'Decembre 2017'),
+    (1, 7, 1, 230.0, 'Janvier 2018'),
+    (2, 7, 2, 13.0, ''),
+    (2, 7, 1, 12.5, ''),
+    (3, 7, 1, 110.0, ''),
+    (3, 7, 2, 80.0, '');

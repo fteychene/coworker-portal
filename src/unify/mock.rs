@@ -32,7 +32,18 @@ impl UnifyClient for MockUnifyClient {
         _note: &str,
         unify_ids: &[String],
     ) -> Result<HashMap<String, VoucherStatus>> {
-        // Mock always returns Valid for all known IDs
-        Ok(unify_ids.iter().map(|id| (id.clone(), VoucherStatus::Valid)).collect())
+        let mut rng = rand::thread_rng();
+        Ok(unify_ids
+            .iter()
+            .map(|id| {
+                let status = if rng.gen_bool(0.3) {
+                    VoucherStatus::Used
+                } else {
+                    VoucherStatus::Valid
+                };
+                tracing::debug!(unify_id = %id, status = ?status, "mock: voucher status");
+                (id.clone(), status)
+            })
+            .collect())
     }
 }

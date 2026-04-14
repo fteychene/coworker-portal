@@ -26,7 +26,7 @@ struct AuthUser {
 
 #[utoipa::path(
     post,
-    path = "/api/auth/login",
+    path = "/login",
     tag = "Auth",
     request_body = LoginRequest,
     responses(

@@ -5,7 +5,7 @@ use axum::{
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
-use utoipa::{IntoParams, ToSchema};
+use utoipa::{IntoParams, ToSchema, openapi::info};
 
 use crate::{
     AppState,
@@ -212,7 +212,7 @@ async fn fetch_vouchers_for_bill(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<
 
 #[utoipa::path(
     post,
-    path = "/api/bills",
+    path = "/bills",
     tag = "Bills",
     security(("bearer_auth" = [])),
     request_body = CreateBillRequest,
@@ -269,6 +269,8 @@ pub async fn create_bill(
     .await?
     .unwrap_or_default();
 
+    tracing::info!(numer= &number, "Create bills");
+
     // 6. Insert bill into billjobs_bill
     let bill_id: i32 = sqlx::query_scalar(
         r#"
@@ -286,6 +288,8 @@ pub async fn create_bill(
     .bind(&billing_address)
     .fetch_one(&mut *tx)
     .await?;
+
+    tracing::info!(numer= &number, "Create bills line");
 
     // 7. Insert bill line (persistence detail, quantity=1)
     sqlx::query(
@@ -357,7 +361,7 @@ pub async fn create_bill(
 
 #[utoipa::path(
     get,
-    path = "/api/bills",
+    path = "/bills",
     tag = "Bills",
     security(("bearer_auth" = [])),
     params(ListBillsQuery),
@@ -422,7 +426,7 @@ pub async fn list_bills(
 
 #[utoipa::path(
     get,
-    path = "/api/bills/{id}",
+    path = "/bills/{id}",
     tag = "Bills",
     security(("bearer_auth" = [])),
     params(

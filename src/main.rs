@@ -3,7 +3,7 @@ use axum::{Json, response::Html, routing::get};
 use axum_swagger_ui::swagger_ui;
 use sqlx::postgres::PgPoolOptions;
 use std::sync::Arc;
-use tower_http::services::ServeDir;
+use tower_http::services::{ServeDir, ServeFile};
 use utoipa::OpenApi;
 use utoipa_axum::router::OpenApiRouter;
 
@@ -71,7 +71,7 @@ async fn main() -> Result<()> {
     let app = router
         .route("/swagger", get(|| async { Html(swagger_ui("/api-docs/openapi.json"))}))
         .route("/api-docs/openapi.json", get(|| async move { Json(api) }))
-        .fallback_service(ServeDir::new("public"))
+        .fallback_service(ServeDir::new("public").fallback(ServeFile::new("public/index.html")))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&config.listen_addr).await?;
