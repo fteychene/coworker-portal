@@ -37,15 +37,22 @@ type VoucherSpec =
     } 
 ```
 
-Bill: A user buy of a service.
+Bill: A user buy of a service. When reading bills from the external system, a bill may reference a service that is not known to this application (created before this app existed, or via a removed service). The read model therefore distinguishes two variants:
+
 ```typescript
-type Bill = {
+type Bill =
+    | ManagedBill    // bill line maps to a service owned by this app
+    | UnmanagedBill  // bill line references an unknown external service
+
+type ManagedBill = {
+    kind: "Managed"
     id: int
     number: string   // format: FYYYYMMNNN — see LastNumberCompute below
     user: User       // ref
-    service: Service // ref
+    service: Service // ref — our internal service, resolved via external_service_id
     date: DateTime
     amount: float
+    isPaid: boolean  // read from billjobs_bill."isPaid"; always false at creation
     issuerAddress: string
     billingAddress: string
     vouchers: [Voucher] // ref
@@ -53,9 +60,23 @@ type Bill = {
     // invariant: number is computed at creation
     // invariant: date is computed at creation as system time
     // invariant: amount is a copy of service.price at creation time
-    // invariant: once created Bill is immutable
+    // invariant: isPaid is owned by the external system — this app never writes it
+    // invariant: once created Bill is immutable from this app's perspective
+}
+
+type UnmanagedBill = {
+    kind: "Unmanaged"
+    id: int
+    number: string
+    date: DateTime
+    amount: float
+    isPaid: boolean  // read from billjobs_bill."isPaid"
+    // no service ref — the bill line's service_id does not match any service.external_service_id
+    // no vouchers — only bills created by this app have vouchers in our voucher table
 }
 ```
+
+> **Resolution rule:** when loading a bill, a correlated subquery looks for a `billjobs_billline` row whose `service_id` matches any `service.external_service_id`. The first match wins (`LIMIT 1`). If no match is found the bill is `Unmanaged`. Multi-line bills (created externally) are handled safely by this rule — only the first managed line is used.
 
 Voucher: Represent access coupon a User can use in the coworking space.
 Vouchers are persisted locally after being provisioned on Unify at invoice creation time. The stored `unifyId` enables later validity checks against the Unify edge without re-querying by note.
@@ -186,7 +207,7 @@ This app writes to (anti-pattern, compatible with shared invoicing schema):
 | `amount` | float8 | copy of service.price |
 | `issuer_address` | varchar(1024) | |
 | `billing_address` | varchar(1024) | copied from user profile |
-| `isPaid` | boolean | always false at creation |
+| `isPaid` | boolean | always false at creation; updated by external system only |
 
 **`billjobs_billline`** → persistence detail for `Bill`, not in core domain
 | Column | Type | Notes |

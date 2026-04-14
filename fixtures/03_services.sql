@@ -50,4 +50,11 @@ VALUES
     'Accès 5h à l''espace de coworking',
     12.0,
     true
+  ),
+  (
+    'UM001',
+    'Unmanaged service',
+    'Umanaged service',
+    30,
+    false
   );

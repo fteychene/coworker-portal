@@ -27,6 +27,7 @@ pub struct Bill {
     pub service_id: i32,
     pub date: NaiveDate,
     pub amount: f64,
+    pub is_paid: bool,
     pub issuer_address: String,
     pub billing_address: String,
     pub vouchers: Vec<Voucher>,
