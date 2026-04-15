@@ -1,8 +1,6 @@
 use axum::{
     Json,
-    body::Body,
     extract::{Path, State},
-    http::header,
     response::Response,
 };
 use serde::Serialize;
@@ -58,7 +56,7 @@ pub async fn check_vouchers(
         r#"
         SELECT v.unify_id, v.unify_create_time, v.code, v.duration,
                b.number AS bill_number, u.first_name
-        FROM voucher v
+        FROM portal_voucher v
         JOIN billjobs_bill b ON b.id = v.bill_id
         JOIN auth_user u ON u.id = b.user_id
         WHERE v.bill_id = $1 AND b.user_id = $2
@@ -90,7 +88,7 @@ pub async fn check_vouchers(
             .cloned()
             .unwrap_or(VoucherStatus::Unknown);
 
-        sqlx::query("UPDATE voucher SET status = $1 WHERE unify_id = $2")
+        sqlx::query("UPDATE portal_voucher SET status = $1 WHERE unify_id = $2")
             .bind(status.as_str())
             .bind(&r.unify_id)
             .execute(&state.db)
@@ -139,47 +137,5 @@ pub async fn bill_pdf(
         return Err(AppError::NotFound);
     }
 
-    let session = user
-        .django_session
-        .ok_or_else(|| AppError::Unify("No Django session in token — please log in again".into()))?;
-
-    let url = format!(
-        "{}/billjobs/generate_pdf/{}",
-        state.config.django_base_url, bill_id
-    );
-
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(state.config.django_accept_invalid_certs)
-        .build()
-        .map_err(|e| AppError::Unify(e.to_string()))?;
-
-    let res = client
-        .get(&url)
-        .header("Cookie", format!("sessionid={}", session))
-        .send()
-        .await
-        .map_err(|e| AppError::Unify(e.to_string()))?;
-
-    if !res.status().is_success() {
-        return Err(AppError::Unify(format!(
-            "Django returned {}",
-            res.status()
-        )));
-    }
-
-    let content_disposition = res
-        .headers()
-        .get(header::CONTENT_DISPOSITION)
-        .cloned();
-
-    let bytes = res.bytes().await.map_err(|e| AppError::Unify(e.to_string()))?;
-
-    let mut builder = Response::builder()
-        .header(header::CONTENT_TYPE, "application/pdf");
-
-    if let Some(cd) = content_disposition {
-        builder = builder.header(header::CONTENT_DISPOSITION, cd);
-    }
-
-    Ok(builder.body(Body::from(bytes)).unwrap())
+    crate::routes::guest::proxy_bill_pdf(&state, bill_id).await
 }

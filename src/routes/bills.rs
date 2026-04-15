@@ -118,9 +118,7 @@ struct BillRow {
 struct VoucherRow {
     unify_id: String,
     bill_id: i32,
-    unify_create_time: i64,
     code: String,
-    created_at: chrono::DateTime<Utc>,
     duration: i32,
     status: String,
 }
@@ -139,17 +137,6 @@ fn row_to_service(row: ServiceRow) -> Result<Service, AppError> {
     Ok(Service { id: row.id, name: row.name, description: row.description, price: row.price, voucher_spec, external_service_id: row.external_service_id })
 }
 
-fn row_to_voucher(row: VoucherRow) -> Voucher {
-    Voucher {
-        unify_id: row.unify_id,
-        bill_id: row.bill_id,
-        unify_create_time: row.unify_create_time,
-        code: row.code,
-        created_at: row.created_at,
-        duration: row.duration,
-        status: VoucherStatus::from(row.status.as_str()),
-    }
-}
 
 fn to_bill_response(bill: &Bill) -> BillResponse {
     BillResponse::Managed(ManagedBill {
@@ -168,44 +155,58 @@ fn to_bill_response(bill: &Bill) -> BillResponse {
     })
 }
 
-async fn row_to_bill_response(db: &sqlx::PgPool, row: BillRow) -> Result<BillResponse, AppError> {
+fn bill_row_to_response(row: BillRow, vouchers: Vec<VoucherRow>) -> BillResponse {
     match row.service_id {
-        Some(service_id) => {
-            let vouchers = fetch_vouchers_for_bill(db, row.id).await?;
-            Ok(BillResponse::Managed(ManagedBill {
-                id: row.id,
-                number: row.number,
-                date: row.billing_date,
-                amount: row.amount,
-                is_paid: row.is_paid,
-                service_id,
-                vouchers: vouchers.iter().map(|v| VoucherResponse {
-                    unify_id: v.unify_id.clone(),
-                    code: format_code(&v.code),
-                    duration: v.duration,
-                    status: v.status.as_str().to_string(),
-                }).collect(),
-            }))
-        }
-        None => Ok(BillResponse::Unmanaged(UnmanagedBill {
+        Some(service_id) => BillResponse::Managed(ManagedBill {
             id: row.id,
             number: row.number,
             date: row.billing_date,
             amount: row.amount,
             is_paid: row.is_paid,
-        })),
+            service_id,
+            vouchers: vouchers.into_iter().map(|v| VoucherResponse {
+                unify_id: v.unify_id,
+                code: format_code(&v.code),
+                duration: v.duration,
+                status: v.status,
+            }).collect(),
+        }),
+        None => BillResponse::Unmanaged(UnmanagedBill {
+            id: row.id,
+            number: row.number,
+            date: row.billing_date,
+            amount: row.amount,
+            is_paid: row.is_paid,
+        }),
     }
 }
 
-async fn fetch_vouchers_for_bill(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<Voucher>, AppError> {
+async fn fetch_vouchers_for_bill(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<VoucherRow>, AppError> {
     let rows = sqlx::query_as::<_, VoucherRow>(
-        "SELECT unify_id, bill_id, unify_create_time, code, created_at, duration, status FROM voucher WHERE bill_id = $1"
+        "SELECT unify_id, bill_id, code, duration, status FROM portal_voucher WHERE bill_id = $1"
     )
     .bind(bill_id)
     .fetch_all(db)
     .await?;
+    Ok(rows)
+}
 
-    Ok(rows.into_iter().map(row_to_voucher).collect())
+async fn fetch_vouchers_bulk(db: &sqlx::PgPool, bill_ids: &[i32]) -> Result<std::collections::HashMap<i32, Vec<VoucherRow>>, AppError> {
+    if bill_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+    let rows = sqlx::query_as::<_, VoucherRow>(
+        "SELECT unify_id, bill_id, code, duration, status FROM portal_voucher WHERE bill_id = ANY($1)"
+    )
+    .bind(bill_ids)
+    .fetch_all(db)
+    .await?;
+
+    let mut map: std::collections::HashMap<i32, Vec<VoucherRow>> = std::collections::HashMap::new();
+    for row in rows {
+        map.entry(row.bill_id).or_default().push(row);
+    }
+    Ok(map)
 }
 
 // ─── Handlers ────────────────────────────────────────────────────────────────
@@ -233,7 +234,7 @@ pub async fn create_bill(
     let service_row = sqlx::query_as::<_, ServiceRow>(
         r#"
         SELECT id, name, description, price, kind, amount, duration, external_service_id
-        FROM service
+        FROM portal_service
         WHERE id = $1 AND is_available = true
         "#,
     )
@@ -318,7 +319,7 @@ pub async fn create_bill(
     let mut vouchers = Vec::new();
     for uv in &unify_vouchers {
         sqlx::query(
-            "INSERT INTO voucher (unify_id, bill_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, 'Valid')",
+            "INSERT INTO portal_voucher (unify_id, bill_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, 'Valid')",
         )
         .bind(&uv.unify_id)
         .bind(bill_id)
@@ -396,7 +397,7 @@ pub async fn list_bills(
         r#"
         SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid,
                (SELECT s.id FROM billjobs_billline bl
-                JOIN service s ON s.external_service_id = bl.service_id
+                JOIN portal_service s ON s.external_service_id = bl.service_id
                 WHERE bl.bill_id = b.id LIMIT 1) AS service_id
         FROM billjobs_bill b
         WHERE b.user_id = $1
@@ -416,10 +417,18 @@ pub async fn list_bills(
     .fetch_all(&state.db)
     .await?;
 
-    let mut data = Vec::new();
-    for row in rows {
-        data.push(row_to_bill_response(&state.db, row).await?);
-    }
+    let managed_ids: Vec<i32> = rows.iter()
+        .filter(|r| r.service_id.is_some())
+        .map(|r| r.id)
+        .collect();
+    let mut vouchers_by_bill = fetch_vouchers_bulk(&state.db, &managed_ids).await?;
+
+    let data = rows.into_iter()
+        .map(|row| {
+            let vouchers = vouchers_by_bill.remove(&row.id).unwrap_or_default();
+            bill_row_to_response(row, vouchers)
+        })
+        .collect();
 
     Ok(Json(ListBillsResponse { total, data }))
 }
@@ -447,7 +456,7 @@ pub async fn get_bill(
         r#"
         SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid,
                (SELECT s.id FROM billjobs_billline bl
-                JOIN service s ON s.external_service_id = bl.service_id
+                JOIN portal_service s ON s.external_service_id = bl.service_id
                 WHERE bl.bill_id = b.id LIMIT 1) AS service_id
         FROM billjobs_bill b
         WHERE b.id = $1 AND b.user_id = $2
@@ -459,5 +468,6 @@ pub async fn get_bill(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    Ok(Json(row_to_bill_response(&state.db, row).await?))
+    let vouchers = fetch_vouchers_for_bill(&state.db, row.id).await?;
+    Ok(Json(bill_row_to_response(row, vouchers)))
 }

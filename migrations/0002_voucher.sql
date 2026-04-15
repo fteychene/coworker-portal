@@ -1,4 +1,4 @@
-CREATE TABLE voucher (
+CREATE TABLE portal_voucher (
     unify_id          VARCHAR(50)  NOT NULL PRIMARY KEY, -- UUID from Unify
     bill_id           INT          NOT NULL,             -- references billjobs_bill.id (external)
     unify_create_time BIGINT       NOT NULL,             -- Unix timestamp from Unify create response

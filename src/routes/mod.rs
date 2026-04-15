@@ -4,10 +4,12 @@ use crate::AppState;
 pub mod bills;
 pub mod guest;
 pub mod services;
+pub mod status;
 pub mod vouchers;
 
 pub fn router() -> OpenApiRouter<AppState> {
     OpenApiRouter::new()
+        .routes(routes!(status::status))
         .routes(routes!(services::list_services))
         .routes(routes!(bills::create_bill, bills::list_bills))
         .routes(routes!(bills::get_bill))

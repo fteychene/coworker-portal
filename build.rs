@@ -12,19 +12,29 @@ fn main() {
     let dist_dir = frontend_dir.join("dist");
     let resources_dir = Path::new("public");
 
-    let install = Command::new("npm")
-        .args(["install"])
-        .current_dir(frontend_dir)
-        .status()
-        .expect("Failed to run npm install");
-    assert!(install.success(), "npm install failed");
+    let skip = std::env::var("SKIP_FRONTEND_BUILD").is_ok();
 
-    let build = Command::new("npm")
-        .args(["run", "build"])
-        .current_dir(frontend_dir)
-        .status()
-        .expect("Failed to run npm run build");
-    assert!(build.success(), "npm run build failed");
+    if skip {
+        assert!(
+            dist_dir.exists(),
+            "SKIP_FRONTEND_BUILD is set but frontend/dist/ does not exist — \
+             copy the pre-built frontend before running cargo build"
+        );
+    } else {
+        let install = Command::new("npm")
+            .args(["install"])
+            .current_dir(frontend_dir)
+            .status()
+            .expect("Failed to run npm install");
+        assert!(install.success(), "npm install failed");
+
+        let build = Command::new("npm")
+            .args(["run", "build"])
+            .current_dir(frontend_dir)
+            .status()
+            .expect("Failed to run npm run build");
+        assert!(build.success(), "npm run build failed");
+    }
 
     if resources_dir.exists() {
         fs::remove_dir_all(resources_dir).expect("Failed to clean resources/");

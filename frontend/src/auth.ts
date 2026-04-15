@@ -2,7 +2,6 @@ interface TokenPayload {
   sub: number
   username: string
   first_name: string
-  django_session: string | null
   exp: number
   iat: number
 }
@@ -29,10 +28,6 @@ export function isAuthenticated(): boolean {
   const payload = getTokenPayload()
   if (!payload) return false
   return payload.exp * 1000 > Date.now()
-}
-
-export function hasDjangoSession(): boolean {
-  return !!getTokenPayload()?.django_session
 }
 
 export function logout() {

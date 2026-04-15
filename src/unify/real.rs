@@ -31,7 +31,7 @@ impl RealUnifyClient {
     async fn login(&self, username: &str, password: &str) -> Result<()> {
         self.client
             .post(format!("{}/api/login", self.base_url))
-            .json(&serde_json::json!({ "username": username, "password": password }))
+            .json(&serde_json::json!({ "username": username, "password": password, "site_name": "default", "for_hotspot": "true" }))
             .send()
             .await?
             .error_for_status()?;
@@ -40,7 +40,7 @@ impl RealUnifyClient {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct UnifyVoucherDto {
     #[serde(rename = "_id")]
     id: String,
@@ -50,12 +50,12 @@ struct UnifyVoucherDto {
     status_expires: Option<i64>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct VoucherListResponse {
     data: Vec<UnifyVoucherDto>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct CreateVoucherResponseItem {
     create_time: i64,
 }
@@ -69,9 +69,10 @@ fn map_status(dto: &UnifyVoucherDto) -> VoucherStatus {
     if dto.status_expires.is_some_and(|e| e <= 0) {
         return VoucherStatus::Expired;
     }
-    match dto.status.as_str() {
+    tracing::info!(voucher_id=&dto.id, voucher_status=&dto.status, "Mapping voucher status");
+    match dto.status.to_uppercase().as_str() {
         "VALID_ONE" | "VALID_MULTI" => VoucherStatus::Valid,
-        "USED_MULTIPLE" => VoucherStatus::Used,
+        "USED_MULTIPLE" | "EXPIRED" => VoucherStatus::Used,
         _ => VoucherStatus::Unknown,
     }
 }
@@ -135,10 +136,15 @@ impl UnifyClient for RealUnifyClient {
         let id_set: std::collections::HashSet<&str> =
             unify_ids.iter().map(|s| s.as_str()).collect();
 
-        let map = resp.data.into_iter()
+        let mut map: HashMap<String, VoucherStatus> = resp.data.into_iter()
             .filter(|v| id_set.contains(v.id.as_str()))
             .map(|v| (v.id.clone(), map_status(&v)))
             .collect();
+
+        // Vouchers absent from the response have been revoked — treat as Expired.
+        for id in unify_ids {
+            map.entry(id.clone()).or_insert(VoucherStatus::Expired);
+        }
 
         Ok(map)
     }

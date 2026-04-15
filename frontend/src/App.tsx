@@ -5,7 +5,7 @@ import { CreateBill } from './pages/CreateBill'
 import { Dashboard } from './pages/Dashboard'
 import { GuestBuy } from './pages/GuestBuy'
 import { GuestSummary } from './pages/GuestSummary'
-import { Login } from './pages/Login'
+import { Landing } from './pages/Landing'
 
 function App() {
   return (
@@ -13,7 +13,7 @@ function App() {
       <Routes>
         <Route
           path="/login"
-          element={isAuthenticated() ? <Navigate to="/dashboard" replace /> : <Login />}
+          element={isAuthenticated() ? <Navigate to="/dashboard" replace /> : <Landing />}
         />
         <Route
           path="/dashboard"

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
+import { Navbar } from '../components/Navbar'
 import {
   type GuestBillResponse,
   checkGuestVouchers,
@@ -8,6 +9,7 @@ import {
 } from '../api/guest'
 import type { VoucherStatusEntry } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
+import { useStatus } from '../hooks/useStatus'
 
 export function GuestSummary() {
   const { token } = useParams<{ token: string }>()
@@ -77,6 +79,7 @@ export function GuestSummary() {
     }
   }
 
+  const { invoice_available } = useStatus()
   const hasValidVoucher = bill?.vouchers.some(
     v => (voucherStatuses.get(v.unify_id) ?? v.status) === 'Valid'
   )
@@ -92,11 +95,7 @@ export function GuestSummary() {
   if (error || !bill) {
     return (
       <div className="min-h-screen bg-base-200 flex flex-col">
-        <div className="navbar bg-base-100 border-b border-base-200 px-4">
-          <div className="navbar-start">
-            <span className="text-lg font-bold text-primary">Coworking</span>
-          </div>
-        </div>
+        <Navbar />
         <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
           <div role="alert" className="alert alert-error">
             <span>{error ?? 'Facture introuvable.'}</span>
@@ -108,11 +107,7 @@ export function GuestSummary() {
 
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
-      <div className="navbar bg-base-100 border-b border-base-200 px-4">
-        <div className="navbar-start">
-          <span className="text-lg font-bold text-primary">Coworking</span>
-        </div>
-      </div>
+      <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
         <div className="mb-6">
@@ -133,18 +128,28 @@ export function GuestSummary() {
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-primary">{bill.amount.toFixed(2)} €</p>
-                <button
-                  className="btn btn-xs btn-ghost mt-1"
-                  disabled={downloadingInvoice}
-                  onClick={handleDownloadInvoice}
-                  title="Télécharger la facture PDF"
-                >
-                  {downloadingInvoice
-                    ? <span className="loading loading-spinner loading-xs" />
-                    : '⎙ Facture PDF'}
-                </button>
+                {invoice_available && (
+                  <button
+                    className="btn btn-xs btn-ghost mt-1"
+                    disabled={downloadingInvoice}
+                    onClick={handleDownloadInvoice}
+                    title="Télécharger la facture PDF"
+                  >
+                    {downloadingInvoice
+                      ? <span className="loading loading-spinner loading-xs" />
+                      : '⎙ Facture PDF'}
+                  </button>
+                )}
               </div>
             </div>
+            {!bill.is_paid && (
+              <div role="alert" className="alert alert-info alert-soft">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="stroke-info h-6 w-6 shrink-0">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span className="text-sm font-bold text-base-content/50 mt-1">Merci de vous rapprocher d'un coworker pour effectuer le paiement de votre commande.</span>
+              </div>
+            )}
           </div>
         </div>
 

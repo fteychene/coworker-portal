@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type Service, type VoucherSpec } from '../api/services'
 import { listGuestServices, createGuestBill } from '../api/guest'
+import { Navbar } from '../components/Navbar'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
   if (spec.kind === 'Monthly') return `1 voucher — valable jusqu'à fin de mois`
@@ -94,11 +95,7 @@ export function GuestBuy() {
 
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
-      <div className="navbar bg-base-100 border-b border-base-200 px-4">
-        <div className="navbar-start">
-          <span className="text-lg font-bold text-primary">Coworking</span>
-        </div>
-      </div>
+      <Navbar />
 
       <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
         <div className="mb-6">
@@ -138,28 +135,24 @@ export function GuestBuy() {
             </div>
 
             <div className="card bg-base-100 shadow-sm">
-              <div className="card-body p-4 gap-4">
+              <div className="card-body p-4 gap-3">
                 <h3 className="font-semibold text-sm text-base-content/60 uppercase tracking-wide">
                   Facturation (optionnel)
                 </h3>
-                <div className="form-control gap-1">
-                  <label className="label py-0">
-                    <span className="label-text text-sm">Nom</span>
-                  </label>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm w-20 shrink-0 text-right text-base-content/60">Nom</label>
                   <input
                     type="text"
-                    className="input input-bordered input-sm"
+                    className="input input-bordered input-sm flex-1"
                     placeholder="Prénom Nom"
                     value={billingName}
                     onChange={e => setBillingName(e.target.value)}
                   />
                 </div>
-                <div className="form-control gap-1">
-                  <label className="label py-0">
-                    <span className="label-text text-sm">Adresse</span>
-                  </label>
+                <div className="flex items-start gap-3">
+                  <label className="text-sm w-20 shrink-0 text-right text-base-content/60 pt-1.5">Adresse</label>
                   <textarea
-                    className="textarea textarea-bordered textarea-sm"
+                    className="textarea textarea-bordered textarea-sm flex-1"
                     placeholder={"12 rue de la Paix\n75001 Paris"}
                     rows={3}
                     value={billingAddress}

@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { z } from 'zod'
+import { Navbar } from '../components/Navbar'
 
 const loginSchema = z.object({
   username: z.string().min(1, "Nom d'utilisateur requis"),
@@ -10,7 +11,7 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>
 type FieldErrors = Partial<Record<keyof LoginForm, string>>
 
-export function Login() {
+export function Landing() {
   const navigate = useNavigate()
   const [form, setForm] = useState<LoginForm>({ username: '', password: '' })
   const [errors, setErrors] = useState<FieldErrors>({})
@@ -62,32 +63,36 @@ export function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 flex items-center justify-center p-4">
-      <div className="w-full max-w-sm">
+    <div className="min-h-screen bg-base-200 flex flex-col">
+      <Navbar />
 
-        {/* Brand */}
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary text-primary-content text-2xl font-bold mb-4">
-            C
-          </div>
-          <h1 className="text-2xl font-bold text-base-content">Coworking</h1>
-          <p className="text-base-content/50 text-sm mt-1">Espace membres</p>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center p-4 gap-8">
 
-        {/* Card */}
-        <div className="card bg-base-100 shadow-md">
+      {/* Brand */}
+      <div className="text-center">
+        <img src="/logo-default.png" alt="Cowork'in Montpellier" className="h-20 mx-auto mb-4" />
+        <h1 className="text-2xl font-bold">Cowork'in Montpellier</h1>
+        <p className="text-base-content/50 text-sm mt-1">Bienvenue — comment souhaitez-vous continuer ?</p>
+      </div>
+
+      {/* Two paths */}
+      <div className="flex flex-col md:flex-row gap-4 w-full max-w-2xl items-stretch">
+
+        {/* Member login */}
+        <div className="card bg-base-100 shadow-md flex-1">
           <div className="card-body gap-4">
+            <div>
+              <h2 className="card-title text-base">Espace membres</h2>
+              <p className="text-sm text-base-content/50">Connectez-vous avec votre compte coworking.</p>
+            </div>
 
             {apiError && (
               <div role="alert" className="alert alert-error py-2 text-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
                 <span>{apiError}</span>
               </div>
             )}
 
-            <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4">
+            <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-3">
               <div className="form-control">
                 <label className="label pb-1" htmlFor="username">
                   <span className="label-text font-medium">Identifiant</span>
@@ -129,24 +134,47 @@ export function Login() {
                 )}
               </div>
 
-              <button
-                type="submit"
-                className="btn btn-primary w-full mt-2"
-                disabled={loading}
-              >
-                {loading
-                  ? <span className="loading loading-spinner loading-sm" />
-                  : 'Se connecter'
-                }
-              </button>
+              <div className="card-actions justify-end mt-1">
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-wide"
+                  disabled={loading}
+                >
+                  {loading
+                    ? <span className="loading loading-spinner loading-sm" />
+                    : 'Se connecter'
+                  }
+                </button>
+              </div>
             </form>
-
-            <Link to="/buy" className="btn btn-ghost btn-sm hidden sm:flex">
-              Acheter sans compte
-            </Link>
-
           </div>
         </div>
+
+        {/* Divider */}
+        <div className="flex md:flex-col items-center gap-2 text-base-content/30 text-sm font-medium">
+          <div className="flex-1 border-t md:border-t-0 md:border-l border-base-300 w-full md:w-0 md:h-full" />
+          <span>ou</span>
+          <div className="flex-1 border-t md:border-t-0 md:border-l border-base-300 w-full md:w-0 md:h-full" />
+        </div>
+
+        {/* Guest buy */}
+        <div className="card bg-base-100 shadow-md flex-1">
+          <div className="card-body justify-between gap-6">
+            <div>
+              <h2 className="card-title text-base">Accès visiteur</h2>
+              <p className="text-sm text-base-content/50">
+                Achetez un accès sans créer de compte. Vos vouchers sont disponibles immédiatement après l'achat.
+              </p>
+            </div>
+            <div className="card-actions justify-end">
+              <Link to="/buy" className="btn btn-outline btn-wide">
+                Acheter un accès
+              </Link>
+            </div>
+          </div>
+        </div>
+
+      </div>
 
       </div>
     </div>

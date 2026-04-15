@@ -21,6 +21,7 @@ export const GuestBillResponseSchema = z.object({
   bill_number: z.string(),
   date: z.string(),
   amount: z.number(),
+  is_paid: z.boolean(),
   service_name: z.string(),
   vouchers: z.array(GuestVoucherSchema),
 })

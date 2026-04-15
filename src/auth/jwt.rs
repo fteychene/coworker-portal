@@ -7,7 +7,6 @@ pub struct Claims {
     pub sub: i32,
     pub username: String,
     pub first_name: String,
-    pub django_session: Option<String>,
     pub exp: u64,
     pub iat: u64,
 }
@@ -27,19 +26,12 @@ impl JwtService {
         }
     }
 
-    pub fn generate(
-        &self,
-        user_id: i32,
-        username: &str,
-        first_name: &str,
-        django_session: Option<String>,
-    ) -> Result<String> {
+    pub fn generate(&self, user_id: i32, username: &str, first_name: &str) -> Result<String> {
         let now = jsonwebtoken::get_current_timestamp();
         let claims = Claims {
             sub: user_id,
             username: username.to_string(),
             first_name: first_name.to_string(),
-            django_session,
             iat: now,
             exp: now + self.expiry_hours * 3600,
         };

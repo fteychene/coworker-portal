@@ -3,8 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
-import { hasDjangoSession } from '../auth'
 import { Navbar } from '../components/Navbar'
+import { useStatus } from '../hooks/useStatus'
 
 const PAGE_SIZE = 20
 
@@ -110,6 +110,7 @@ export function Dashboard() {
       .finally(() => setLoading(false))
   }, [page])
 
+  const { invoice_available } = useStatus()
   const totalPages = result ? Math.ceil(result.total / PAGE_SIZE) : 0
 
   return (
@@ -189,7 +190,7 @@ export function Dashboard() {
                       <td className="text-right">{bill.amount.toFixed(2)} €</td>
                       <td>
                         <div className="flex items-center gap-2">
-                          {hasDjangoSession() && (
+                          {invoice_available && (
                             <button
                               className="btn btn-xs btn-ghost btn-circle"
                               disabled={invoiceId === bill.id}

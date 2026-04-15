@@ -78,6 +78,7 @@ pub struct GuestBillResponse {
     pub bill_number: String,
     pub date: String,
     pub amount: f64,
+    pub is_paid: bool,
     pub service_name: String,
     pub vouchers: Vec<GuestVoucherResponse>,
 }
@@ -109,7 +110,7 @@ pub async fn list_guest_services(
     let rows = sqlx::query_as::<_, GuestServiceRow>(
         r#"
         SELECT id, name, description, price, kind, amount, duration, external_service_id
-        FROM service
+        FROM portal_service
         WHERE is_available = true AND is_guest_available = true
         ORDER BY id
         "#,
@@ -145,7 +146,7 @@ pub async fn create_guest_bill(
     let service_row = sqlx::query_as::<_, GuestServiceRow>(
         r#"
         SELECT id, name, description, price, kind, amount, duration, external_service_id
-        FROM service
+        FROM portal_service
         WHERE id = $1 AND is_available = true AND is_guest_available = true
         "#,
     )
@@ -195,8 +196,8 @@ pub async fn create_guest_bill(
     let bill_id: i32 = sqlx::query_scalar(
         r#"
         INSERT INTO billjobs_bill
-            (number, user_id, billing_date, amount, issuer_address, billing_address, "isPaid", guest_token)
-        VALUES ($1, $2, $3, $4, $5, $6, false, $7)
+            (number, user_id, billing_date, amount, issuer_address, billing_address, "isPaid")
+        VALUES ($1, $2, $3, $4, $5, $6, false)
         RETURNING id
         "#,
     )
@@ -206,11 +207,17 @@ pub async fn create_guest_bill(
     .bind(service.price)
     .bind(&state.config.issuer_address)
     .bind(&billing_address)
-    .bind(guest_token)
     .fetch_one(&mut *tx)
     .await?;
 
-    // 8. Insert bill line
+    // 8. Link bill to guest token
+    sqlx::query("INSERT INTO portal_guest_bill (guest_token, bill_id) VALUES ($1, $2)")
+        .bind(guest_token)
+        .bind(bill_id)
+        .execute(&mut *tx)
+        .await?;
+
+    // 10. Insert bill line
     sqlx::query(
         "INSERT INTO billjobs_billline (bill_id, service_id, quantity, total, note) VALUES ($1, $2, 1, $3, '')",
     )
@@ -220,7 +227,7 @@ pub async fn create_guest_bill(
     .execute(&mut *tx)
     .await?;
 
-    // 9. Provision vouchers on Unify
+    // 11. Provision vouchers on Unify
     let note = format!("{}_Guest", number);
     let unify_vouchers = state
         .unify
@@ -233,11 +240,11 @@ pub async fn create_guest_bill(
         .await
         .map_err(|e| AppError::Unify(e.to_string()))?;
 
-    // 10. Persist vouchers
+    // 12. Persist vouchers
     let mut vouchers = Vec::new();
     for uv in &unify_vouchers {
         sqlx::query(
-            "INSERT INTO voucher (unify_id, bill_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, 'Valid')",
+            "INSERT INTO portal_voucher (unify_id, bill_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, 'Valid')",
         )
         .bind(&uv.unify_id)
         .bind(bill_id)
@@ -256,7 +263,7 @@ pub async fn create_guest_bill(
         });
     }
 
-    // 11. Commit
+    // 13. Commit
     tx.commit().await?;
 
     Ok(Json(GuestBillResponse {
@@ -265,6 +272,7 @@ pub async fn create_guest_bill(
         bill_number: number,
         date: now.date_naive().to_string(),
         amount: service.price,
+        is_paid: false,
         service_name: service.name,
         vouchers,
     }))
@@ -292,17 +300,19 @@ pub async fn get_guest_bill(
         number: String,
         billing_date: chrono::NaiveDate,
         amount: f64,
+        is_paid: bool,
         service_name: Option<String>,
     }
 
     let row = sqlx::query_as::<_, GuestBillRow>(
         r#"
-        SELECT b.id, b.number, b.billing_date, b.amount,
+        SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid,
                (SELECT s.name FROM billjobs_billline bl
-                JOIN service s ON s.external_service_id = bl.service_id
+                JOIN portal_service s ON s.external_service_id = bl.service_id
                 WHERE bl.bill_id = b.id LIMIT 1) AS service_name
         FROM billjobs_bill b
-        WHERE b.guest_token = $1
+        JOIN portal_guest_bill gb ON gb.bill_id = b.id
+        WHERE gb.guest_token = $1
         "#,
     )
     .bind(token)
@@ -318,6 +328,7 @@ pub async fn get_guest_bill(
         bill_number: row.number,
         date: row.billing_date.to_string(),
         amount: row.amount,
+        is_paid: row.is_paid,
         service_name: row.service_name.unwrap_or_default(),
         vouchers,
     }))
@@ -333,7 +344,7 @@ async fn fetch_guest_vouchers(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<Gue
     }
 
     let rows = sqlx::query_as::<_, VRow>(
-        "SELECT unify_id, code, duration, status FROM voucher WHERE bill_id = $1",
+        "SELECT unify_id, code, duration, status FROM portal_voucher WHERE bill_id = $1",
     )
     .bind(bill_id)
     .fetch_all(db)
@@ -376,9 +387,10 @@ pub async fn check_guest_vouchers(
         r#"
         SELECT v.unify_id, v.unify_create_time, v.code, v.duration,
                b.number AS bill_number
-        FROM voucher v
+        FROM portal_voucher v
         JOIN billjobs_bill b ON b.id = v.bill_id
-        WHERE b.guest_token = $1
+        JOIN portal_guest_bill gb ON gb.bill_id = b.id
+        WHERE gb.guest_token = $1
         "#,
     )
     .bind(token)
@@ -406,7 +418,7 @@ pub async fn check_guest_vouchers(
             .cloned()
             .unwrap_or(VoucherStatus::Unknown);
 
-        sqlx::query("UPDATE voucher SET status = $1 WHERE unify_id = $2")
+        sqlx::query("UPDATE portal_voucher SET status = $1 WHERE unify_id = $2")
             .bind(status.as_str())
             .bind(&r.unify_id)
             .execute(&state.db)
@@ -442,17 +454,19 @@ pub async fn guest_bill_pdf(
 ) -> Result<Response, AppError> {
     // Look up bill_id by guest_token
     let bill_id: i32 = sqlx::query_scalar(
-        "SELECT id FROM billjobs_bill WHERE guest_token = $1",
+        "SELECT bill_id FROM portal_guest_bill WHERE guest_token = $1",
     )
     .bind(token)
     .fetch_optional(&state.db)
     .await?
     .ok_or(AppError::NotFound)?;
 
-    proxy_guest_pdf(&state, bill_id).await
+    proxy_bill_pdf(&state, bill_id).await
 }
 
-async fn proxy_guest_pdf(state: &AppState, bill_id: i32) -> Result<Response, AppError> {
+/// Proxy a Django invoice PDF using the cached superuser session.
+/// Shared by both authenticated (`bill_pdf`) and guest (`guest_bill_pdf`) routes.
+pub async fn proxy_bill_pdf(state: &AppState, bill_id: i32) -> Result<Response, AppError> {
     let session = {
         let guard = state.superuser_session.read().await;
         guard.clone()

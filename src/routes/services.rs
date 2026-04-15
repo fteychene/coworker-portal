@@ -62,7 +62,7 @@ pub async fn list_services(
     let rows = sqlx::query_as::<_, ServiceRow>(
         r#"
         SELECT id, name, description, price, kind, amount, duration, external_service_id
-        FROM service
+        FROM portal_service
         WHERE is_available = true
         ORDER BY id
         "#,

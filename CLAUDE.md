@@ -50,3 +50,14 @@ The frontend is served by the Rust backend from the `resources/` directory. The 
 
 - `src/main.rs` — Rust entry point
 - `frontend/` — Frontend application (not yet initialized)
+
+## Database conventions
+
+This application shares a PostgreSQL database with an external Django billing app (`billjobs_*` tables). To avoid naming conflicts:
+
+**All app-owned tables must be prefixed with `portal_`.**
+
+- Current app-owned tables: `portal_service`, `portal_voucher`, `portal_guest_bill`
+- External tables (never rename): `billjobs_bill`, `billjobs_billline`, `billjobs_service`, `billjobs_userprofile`, `auth_user`
+
+When adding a new table, always use the `portal_` prefix.

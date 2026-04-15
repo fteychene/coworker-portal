@@ -52,19 +52,9 @@ pub async fn login(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    let django_session = acquire_django_session(
-        &state.config.django_base_url,
-        state.config.django_accept_invalid_certs,
-        &body.username,
-        &body.password,
-    )
-    .await
-    .inspect_err(|e| tracing::warn!(error = %e, "Django session acquisition failed — invoice PDF will be unavailable"))
-    .ok();
-
     let token = state
         .jwt
-        .generate(user.id, &body.username, &user.first_name, django_session)
+        .generate(user.id, &body.username, &user.first_name)
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
     Ok(Json(LoginResponse { token }))

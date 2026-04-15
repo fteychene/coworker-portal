@@ -1,2 +1,6 @@
--- Add guest_token to billjobs_bill for unauthenticated bill access
-ALTER TABLE billjobs_bill ADD COLUMN IF NOT EXISTS guest_token UUID;
+-- Dedicated table for guest bill access tokens.
+-- Avoids modifying billjobs_bill (owned by the external django-billjobs app).
+CREATE TABLE IF NOT EXISTS portal_guest_bill (
+    guest_token UUID PRIMARY KEY,
+    bill_id     INTEGER NOT NULL
+);
