@@ -86,20 +86,10 @@ pub fn next_bill_number(last: Option<&str>, today: NaiveDate) -> String {
 }
 
 /// Compute voucher duration in hours for a Monthly service:
-/// hours from now until 23:59:59 on the last day of the current month.
+/// hours from now until 23:59:59 on the 30th day from today.
 pub fn monthly_duration_hours(now: DateTime<Utc>) -> i32 {
-    use chrono::Datelike;
-    let date = now.date_naive();
-    let first_of_next = if date.month() == 12 {
-        NaiveDate::from_ymd_opt(date.year() + 1, 1, 1).unwrap()
-    } else {
-        NaiveDate::from_ymd_opt(date.year(), date.month() + 1, 1).unwrap()
-    };
-    let last_day = first_of_next - chrono::Duration::days(1);
-    let end = last_day
-        .and_hms_opt(23, 59, 59)
-        .unwrap()
-        .and_utc();
+    let expiry_day = now.date_naive() + chrono::Duration::days(30);
+    let end = expiry_day.and_hms_opt(23, 59, 59).unwrap().and_utc();
     let secs = (end - now).num_seconds().max(0);
     ((secs as f64) / 3600.0).ceil() as i32
 }

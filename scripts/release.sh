@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TARGET="aarch64-unknown-linux-gnu"
-BINARY_NAME="coworking-tooling"
+BINARY_NAME="coworker-portal"
 ARCHIVE_NAME="${BINARY_NAME}-${TARGET}.tar.gz"
 
 echo "==> Building frontend..."

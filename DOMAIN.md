@@ -29,7 +29,7 @@ type Service = {
 }
 
 type VoucherSpec = 
-    | {kind: "Monthly"} // duration for Monthly service is to create one voucher that as a duration until end of current month (example March 3th  should createa Voucher with validity until March 31th midnight)
+    | {kind: "Monthly"} // duration for Monthly service is to create one voucher valid for 30 days, expiring at 23:59:59 on the 30th day from creation (e.g. created April 15 → expires May 15 at midnight)
     | {
         kind: "Book"
         amount: int
@@ -109,15 +109,16 @@ type VoucherStatus =
 
 **MonthlyVoucherDuration** — Duration computation for `Monthly` vouchers
 
-When creating a voucher for a `Monthly` service, the duration is the number of hours from the creation instant to midnight at the end of the current month.
+When creating a voucher for a `Monthly` service, the duration is exactly 30 days, expiring at 23:59:59 on the 30th day from the creation date.
 
 Rule:
-- `end = last day of creation month, at 23:59:59 local time`
+- `expiryDay = creationDate + 30 days`
+- `end = expiryDay at 23:59:59 UTC`
 - `duration = ceil((end - createdAt) in hours)`
 
-Example: created on March 3rd at 10:00 → end is March 31st 23:59:59 → duration = 686 hours.
+Example: created on April 15th at 14:00 UTC → expiry day is May 15th → end is May 15th 23:59:59 UTC → duration ≈ 730 hours.
 
-> **Invariant:** the duration is computed at creation time and frozen. A voucher created mid-month has a shorter duration than one created at the start.
+> **Invariant:** the duration is computed at creation time and frozen.
 
 ### Bill last number compute
 
@@ -147,7 +148,7 @@ All int are stored as int4.
 
 This app owns the schema and data for:
 
-**`service`** → `Service`
+**`portal_service`** → `Service`
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | int4 | |
@@ -159,18 +160,24 @@ This app owns the schema and data for:
 | `duration` | int4 | null for Monthly; hours per voucher for Book |
 | `external_service_id` | int4 | references billjobs_service.id |
 | `is_available` | boolean | filter on listing |
+| `is_guest_available` | boolean | default false; must be true to appear in guest service list |
 
-**`voucher`** → `Voucher`
+**`portal_voucher`** → `Voucher`
 | Column | Type | Notes |
 |--------|------|-------|
-| `id` | int4 | |
-| `bill_id` | int4 | |
-| `unify_id` | text | |
-| `unify_create_time` | int8 | |
-| `code` | text | |
+| `unify_id` | varchar(50) | primary key; Unify ObjectId |
+| `bill_id` | int4 | FK → billjobs_bill.id |
+| `unify_create_time` | int8 | Unix timestamp from Unify create response |
+| `code` | varchar(10) | 10-digit code; displayed as XXXXX-XXXXX |
 | `created_at` | timestamptz | |
 | `duration` | int4 | hours |
-| `status` | text | mutable; updated by validity check |
+| `status` | varchar(10) | mutable; updated by validity check |
+
+**`portal_guest_bill`** — guest token → bill mapping
+| Column | Type | Notes |
+|--------|------|-------|
+| `guest_token` | uuid | primary key; randomly generated at guest bill creation |
+| `bill_id` | int4 | FK → billjobs_bill.id |
 
 ### Postgres — owned by external app (django-billjobs)
 
@@ -325,21 +332,11 @@ A visitor can buy a service without a coworking account via a public `/buy` rout
 **Key design decisions:**
 - Services must be explicitly opted-in with `is_guest_available = true`
 - Bill is owned by `GUEST_USER_ID` (a generic Django `auth_user` record)
-- A `guest_token` UUID is generated at creation and stored on the bill row. It is the only access credential for subsequent guest operations — sequential integer bill IDs are never exposed publicly
+- A `guest_token` UUID is generated at creation and stored in the `portal_guest_bill` table (separate from `billjobs_bill` to avoid modifying the external app's schema). It is the only access credential for subsequent guest operations — sequential integer bill IDs are never exposed publicly
 - Customer name: if provided in the form, it is prepended as the first line of `billing_address` (e.g. `"François Dupont\n12 rue de la Paix\n75001 Paris"`). Django's `generate_pdf` view renders `billing_address` verbatim in the address box, so the name appears in the invoice despite always using the generic user account
 - PDF proxy for guest bills uses a shared Django superuser session (`DJANGO_SUPERUSER_USERNAME` / `DJANGO_SUPERUSER_PASSWORD`), acquired at server startup and cached in `AppState`. On 403, the session is re-acquired once and retried
 
-**Service schema addition:**
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `is_guest_available` | boolean | default `false`; must be set to `true` to appear in guest service list |
-
-**`billjobs_bill` schema addition:**
-
-| Column | Type | Notes |
-|--------|------|-------|
-| `guest_token` | uuid | null for authenticated bills; set to a random UUID for guest bills |
+**`portal_guest_bill` table** — see schema in the Edges section above.
 
 **Environment variables:**
 

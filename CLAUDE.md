@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`coworking-tooling` is a Rust project (edition 2024) with a planned frontend component.
+`coworker-portal` is a Rust project (edition 2024) with a planned frontend component.
 
 This application should be a intranet portal with an ui for coworking user to subscribe to services.
 Those service will be registered as invoice in a database, will also create vouchers on a unify router via api and generate a voucher pdf.

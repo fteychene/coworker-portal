@@ -35,7 +35,7 @@ impl RealUnifyClient {
             .send()
             .await?
             .error_for_status()?;
-        tracing::info!("Unify login successful");
+        tracing::info!("Unify login successful as {username}" );
         Ok(())
     }
 }

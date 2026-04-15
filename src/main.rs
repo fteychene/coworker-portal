@@ -32,7 +32,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "coworking_tooling=debug,info".parse().unwrap()),
+                .unwrap_or_else(|_| "coworker_portal=debug,info".parse().unwrap()),
         )
         .init();
 
