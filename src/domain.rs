@@ -19,20 +19,29 @@ pub enum VoucherSpec {
     Book { amount: i32, duration: i32 }, // duration in hours
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BillLine {
+    pub id: i32,
+    pub service_id: Option<i32>, // None = line references a service unknown to this app
+    pub vouchers: Vec<Voucher>,
+}
+
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Bill {
     pub id: i32,
     pub number: String,
     pub user_id: i32,
-    pub service_id: i32,
     pub date: NaiveDate,
     pub amount: f64,
     pub is_paid: bool,
     pub issuer_address: String,
     pub billing_address: String,
-    pub vouchers: Vec<Voucher>,
+    pub lines: Vec<BillLine>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Voucher {
     pub unify_id: String,

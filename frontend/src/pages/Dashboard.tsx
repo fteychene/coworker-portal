@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills } from '../api/bills'
+import { type Bill, type ListBillsResponse, type VoucherStatusEntry, checkVouchers, downloadBillPdf, listBills } from '../api/bills'
 import { generateVoucherPdf } from '../components/VoucherPdf'
 import { type Service, listServices } from '../api/services'
 import { Navbar } from '../components/Navbar'
@@ -27,6 +27,16 @@ function SkeletonRow() {
       ))}
     </tr>
   )
+}
+
+/** Flatten all vouchers from all lines of a bill into a single list. */
+function flattenVouchers(bill: Bill): VoucherStatusEntry[] {
+  return bill.lines.flatMap(l => l.vouchers.map(v => ({
+    unify_id: v.unify_id,
+    code: v.code,
+    duration: v.duration,
+    status: v.status,
+  })))
 }
 
 export function Dashboard() {
@@ -94,13 +104,9 @@ export function Dashboard() {
         setVoucherStatuses(prev => {
           const next = new Map(prev)
           for (const bill of res.data) {
-            if (bill.kind === 'Managed' && bill.vouchers.length > 0) {
-              next.set(bill.id, bill.vouchers.map(v => ({
-                unify_id: v.unify_id,
-                code: v.code,
-                duration: v.duration,
-                status: v.status,
-              })))
+            const allVouchers = flattenVouchers(bill)
+            if (allVouchers.length > 0) {
+              next.set(bill.id, allVouchers)
             }
           }
           return next
@@ -148,7 +154,7 @@ export function Dashboard() {
                 <th />
                 <th>Numéro</th>
                 <th>Date</th>
-                <th>Service</th>
+                <th>Service(s)</th>
                 <th className="text-right">Montant</th>
                 <th>Statut</th>
               </tr>
@@ -167,18 +173,23 @@ export function Dashboard() {
               )}
 
               {!loading && result?.data.map(bill => {
-                const unmanaged = bill.kind === 'Unmanaged'
-                const serviceName = bill.kind === 'Managed'
-                  ? (serviceMap.get(bill.service_id)?.name ?? '—')
-                  : null
+                const managedLines = bill.lines.filter(l => l.service_id != null)
+                const allUnmanaged = managedLines.length === 0
+                const serviceNames = managedLines
+                  .map(l => {
+                    const name = serviceMap.get(l.service_id!)?.name ?? '—'
+                    return l.quantity > 1 ? `${l.quantity}× ${name}` : name
+                  })
+                  .join(', ')
                 const expanded = expandedId === bill.id
-                const hasVouchers = bill.kind === 'Managed' && bill.vouchers.length > 0
+                const allVouchers = flattenVouchers(bill)
+                const hasVouchers = allVouchers.length > 0
 
                 return (
                   <>
                     <tr
                       key={bill.id}
-                      className={unmanaged ? 'opacity-50 italic' : 'hover cursor-pointer'}
+                      className={allUnmanaged ? 'opacity-50 italic' : 'hover cursor-pointer'}
                       onClick={() => hasVouchers && toggleExpand(bill.id)}
                     >
                       <td className="w-6 text-base-content/30 text-xs">
@@ -186,7 +197,7 @@ export function Dashboard() {
                       </td>
                       <td className="font-mono">{bill.number}</td>
                       <td>{bill.date}</td>
-                      <td className="text-base-content/70">{serviceName}</td>
+                      <td className="text-base-content/70">{allUnmanaged ? null : serviceNames}</td>
                       <td className="text-right">{bill.amount.toFixed(2)} €</td>
                       <td>
                         <div className="flex items-center gap-2">
@@ -202,12 +213,12 @@ export function Dashboard() {
                                 : '⎙'}
                             </button>
                           )}
-                          {!unmanaged && <StatusBadge isPaid={bill.is_paid} date={bill.date} />}
+                          {!allUnmanaged && <StatusBadge isPaid={bill.is_paid} date={bill.date} />}
                         </div>
                       </td>
                     </tr>
 
-                    {expanded && bill.kind === 'Managed' && (
+                    {expanded && hasVouchers && (
                       <tr key={`${bill.id}-vouchers`} className="bg-base-200/60">
                         <td />
                         <td colSpan={5} className="py-4 px-4">
@@ -236,40 +247,59 @@ export function Dashboard() {
                               </button>
                             )}
                           </div>
-                          <div className="flex flex-wrap gap-3">
-                            {bill.vouchers.map((v, i) => {
-                              const liveStatus = voucherStatuses.get(bill.id)?.find(s => s.unify_id === v.unify_id)
-                              const status = liveStatus?.status ?? null
-                              const isExpired = status === 'Expired' || status === 'Used'
+
+                          {/* Render vouchers grouped by line; show service name sub-header when multi-line */}
+                          <div className="flex flex-col gap-4">
+                            {bill.lines.filter(l => l.vouchers.length > 0).map(line => {
+                              const lineName = line.service_id != null
+                                ? (serviceMap.get(line.service_id)?.name ?? null)
+                                : null
+                              const lineLabel = lineName
+                                ? (line.quantity > 1 ? `${line.quantity}× ${lineName}` : lineName)
+                                : null
                               return (
-                                <div
-                                  key={v.unify_id}
-                                  className={`card border shadow-sm w-44 transition-opacity ${
-                                    isExpired
-                                      ? 'bg-base-200 border-base-300 opacity-40'
-                                      : 'bg-base-100 border-base-300'
-                                  }`}
-                                >
-                                  <div className="card-body p-3 gap-1">
-                                    <div className="flex items-center justify-between">
-                                      <p className="text-xs text-base-content/40 font-medium">Voucher {i + 1}</p>
-                                      {status && (
-                                        <span className={`badge badge-xs ${
-                                          status === 'Valid' ? 'badge-success' :
-                                          status === 'Used' ? 'badge-neutral' :
-                                          status === 'Expired' ? 'badge-error' :
-                                          'badge-ghost'
-                                        }`}>
-                                          {status === 'Valid' ? 'Valide' :
-                                           status === 'Used' ? 'Utilisé' :
-                                           status === 'Expired' ? 'Expiré' : 'Inconnu'}
-                                        </span>
-                                      )}
-                                    </div>
-                                    <p className={`font-mono font-semibold text-sm tracking-wide ${isExpired ? 'line-through' : ''}`}>
-                                      {v.code}
-                                    </p>
-                                    <p className="text-xs text-base-content/50">{v.duration}h</p>
+                                <div key={line.id}>
+                                  {bill.lines.filter(l => l.vouchers.length > 0).length > 1 && lineLabel && (
+                                    <p className="text-xs text-base-content/50 font-medium mb-2">{lineLabel}</p>
+                                  )}
+                                  <div className="flex flex-wrap gap-3">
+                                    {line.vouchers.map((v, i) => {
+                                      const liveStatus = voucherStatuses.get(bill.id)?.find(s => s.unify_id === v.unify_id)
+                                      const status = liveStatus?.status ?? null
+                                      const isExpired = status === 'Expired' || status === 'Used'
+                                      return (
+                                        <div
+                                          key={v.unify_id}
+                                          className={`card border shadow-sm w-44 transition-opacity ${
+                                            isExpired
+                                              ? 'bg-base-200 border-base-300 opacity-40'
+                                              : 'bg-base-100 border-base-300'
+                                          }`}
+                                        >
+                                          <div className="card-body p-3 gap-1">
+                                            <div className="flex items-center justify-between">
+                                              <p className="text-xs text-base-content/40 font-medium">Voucher {i + 1}</p>
+                                              {status && (
+                                                <span className={`badge badge-xs ${
+                                                  status === 'Valid' ? 'badge-success' :
+                                                  status === 'Used' ? 'badge-neutral' :
+                                                  status === 'Expired' ? 'badge-error' :
+                                                  'badge-ghost'
+                                                }`}>
+                                                  {status === 'Valid' ? 'Valide' :
+                                                   status === 'Used' ? 'Utilisé' :
+                                                   status === 'Expired' ? 'Expiré' : 'Inconnu'}
+                                                </span>
+                                              )}
+                                            </div>
+                                            <p className={`font-mono font-semibold text-sm tracking-wide ${isExpired ? 'line-through' : ''}`}>
+                                              {v.code}
+                                            </p>
+                                            <p className="text-xs text-base-content/50">{v.duration}h</p>
+                                          </div>
+                                        </div>
+                                      )
+                                    })}
                                   </div>
                                 </div>
                               )

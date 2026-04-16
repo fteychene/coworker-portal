@@ -71,6 +71,13 @@ pub struct GuestVoucherResponse {
     pub status: String,
 }
 
+#[derive(Serialize, ToSchema, Clone)]
+pub struct GuestBillLineResponse {
+    pub service_name: String,
+    pub quantity: i32,
+    pub vouchers: Vec<GuestVoucherResponse>,
+}
+
 #[derive(Serialize, ToSchema)]
 pub struct GuestBillResponse {
     pub guest_token: String,
@@ -79,15 +86,22 @@ pub struct GuestBillResponse {
     pub date: String,
     pub amount: f64,
     pub is_paid: bool,
-    pub service_name: String,
-    pub vouchers: Vec<GuestVoucherResponse>,
+    pub lines: Vec<GuestBillLineResponse>,
 }
 
 // ─── Request types ────────────────────────────────────────────────────────────
 
 #[derive(Deserialize, ToSchema)]
-pub struct CreateGuestBillRequest {
+pub struct CreateGuestBillLineRequest {
     pub service_id: i32,
+    #[serde(default = "default_quantity")]
+    pub quantity: i32,
+}
+fn default_quantity() -> i32 { 1 }
+
+#[derive(Deserialize, ToSchema)]
+pub struct CreateGuestBillRequest {
+    pub lines: Vec<CreateGuestBillLineRequest>,
     /// Optional customer name — prepended to billing_address so it appears in the Django-generated PDF.
     pub billing_name: Option<String>,
     /// Optional billing address lines.
@@ -140,24 +154,34 @@ pub async fn create_guest_bill(
     State(state): State<AppState>,
     Json(body): Json<CreateGuestBillRequest>,
 ) -> Result<Json<GuestBillResponse>, AppError> {
+    if body.lines.is_empty() {
+        return Err(crate::error::AppError::BadRequest("At least one line is required".into()));
+    }
+
     let now = Utc::now();
 
-    // 1. Fetch service (must be guest-available)
-    let service_row = sqlx::query_as::<_, GuestServiceRow>(
-        r#"
-        SELECT id, name, description, price, kind, amount, duration, external_service_id
-        FROM portal_service
-        WHERE id = $1 AND is_available = true AND is_guest_available = true
-        "#,
-    )
-    .bind(body.service_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or(AppError::NotFound)?;
-    let service = Service::try_from(service_row)?;
+    // 1. Fetch all services (must all be guest-available); validate quantity >= 1
+    let mut service_lines: Vec<(Service, i32)> = Vec::with_capacity(body.lines.len());
+    for line_req in &body.lines {
+        if line_req.quantity < 1 {
+            return Err(AppError::BadRequest(format!("Quantity must be at least 1 (got {})", line_req.quantity)));
+        }
+        let service_row = sqlx::query_as::<_, GuestServiceRow>(
+            r#"
+            SELECT id, name, description, price, kind, amount, duration, external_service_id
+            FROM portal_service
+            WHERE id = $1 AND is_available = true AND is_guest_available = true
+            "#,
+        )
+        .bind(line_req.service_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or(AppError::NotFound)?;
+        service_lines.push((Service::try_from(service_row)?, line_req.quantity));
+    }
 
-    // 2. Compute voucher params
-    let (voucher_count, duration_hours) = resolve_voucher_params(&service.voucher_spec, now);
+    // 2. Compute total amount (price × quantity per line)
+    let total_amount: f64 = service_lines.iter().map(|(s, q)| s.price * (*q as f64)).sum();
 
     // 3. Build billing address — name prepended if provided
     let fallback_address: String = sqlx::query_scalar(
@@ -190,7 +214,7 @@ pub async fn create_guest_bill(
             .await?;
     let number = next_bill_number(last_number.as_deref(), now.date_naive());
 
-    tracing::info!(number = &number, guest_token = %guest_token, "Creating guest bill");
+    tracing::info!(number = &number, lines = service_lines.len(), guest_token = %guest_token, "Creating guest bill");
 
     // 7. Insert bill
     let bill_id: i32 = sqlx::query_scalar(
@@ -204,7 +228,7 @@ pub async fn create_guest_bill(
     .bind(&number)
     .bind(state.config.guest_user_id)
     .bind(now.date_naive())
-    .bind(service.price)
+    .bind(total_amount)
     .bind(&state.config.issuer_address)
     .bind(&billing_address)
     .fetch_one(&mut *tx)
@@ -217,53 +241,67 @@ pub async fn create_guest_bill(
         .execute(&mut *tx)
         .await?;
 
-    // 10. Insert bill line
-    sqlx::query(
-        "INSERT INTO billjobs_billline (bill_id, service_id, quantity, total, note) VALUES ($1, $2, 1, $3, '')",
-    )
-    .bind(bill_id)
-    .bind(service.external_service_id)
-    .bind(service.price)
-    .execute(&mut *tx)
-    .await?;
-
-    // 11. Provision vouchers on Unify
+    // 9. For each line: insert bill line, provision vouchers, persist vouchers
     let note = format!("{}_Guest", number);
-    let unify_vouchers = state
-        .unify
-        .create_vouchers(CreateVouchersRequest {
-            n: voucher_count,
-            duration_hours,
-            note,
-            quota: 2,
-        })
-        .await
-        .map_err(|e| AppError::Unify(e.to_string()))?;
+    let mut response_lines: Vec<GuestBillLineResponse> = Vec::with_capacity(service_lines.len());
 
-    // 12. Persist vouchers
-    let mut vouchers = Vec::new();
-    for uv in &unify_vouchers {
-        sqlx::query(
-            "INSERT INTO portal_voucher (unify_id, bill_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, 'Valid')",
+    for (service, quantity) in &service_lines {
+        let (voucher_count, duration_hours) = resolve_voucher_params(&service.voucher_spec, now);
+        let line_total = service.price * (*quantity as f64);
+        let total_vouchers = voucher_count * quantity;
+
+        let billline_id: i32 = sqlx::query_scalar(
+            "INSERT INTO billjobs_billline (bill_id, service_id, quantity, total, note) VALUES ($1, $2, $3, $4, '') RETURNING id",
         )
-        .bind(&uv.unify_id)
         .bind(bill_id)
-        .bind(uv.create_time)
-        .bind(&uv.code)
-        .bind(now)
-        .bind(uv.duration)
-        .execute(&mut *tx)
+        .bind(service.external_service_id)
+        .bind(*quantity as i16)
+        .bind(line_total)
+        .fetch_one(&mut *tx)
         .await?;
 
-        vouchers.push(GuestVoucherResponse {
-            unify_id: uv.unify_id.clone(),
-            code: format_code(&uv.code),
-            duration: uv.duration,
-            status: VoucherStatus::Valid.as_str().to_string(),
+        let unify_vouchers = state
+            .unify
+            .create_vouchers(CreateVouchersRequest {
+                n: total_vouchers,
+                duration_hours,
+                note: note.clone(),
+                quota: 2,
+            })
+            .await
+            .map_err(|e| AppError::Unify(e.to_string()))?;
+
+        let mut line_vouchers = Vec::new();
+        for uv in &unify_vouchers {
+            sqlx::query(
+                "INSERT INTO portal_voucher (unify_id, bill_id, billline_id, unify_create_time, code, created_at, duration, status) VALUES ($1, $2, $3, $4, $5, $6, $7, 'Valid')",
+            )
+            .bind(&uv.unify_id)
+            .bind(bill_id)
+            .bind(billline_id)
+            .bind(uv.create_time)
+            .bind(&uv.code)
+            .bind(now)
+            .bind(uv.duration)
+            .execute(&mut *tx)
+            .await?;
+
+            line_vouchers.push(GuestVoucherResponse {
+                unify_id: uv.unify_id.clone(),
+                code: format_code(&uv.code),
+                duration: uv.duration,
+                status: VoucherStatus::Valid.as_str().to_string(),
+            });
+        }
+
+        response_lines.push(GuestBillLineResponse {
+            service_name: service.name.clone(),
+            quantity: *quantity,
+            vouchers: line_vouchers,
         });
     }
 
-    // 13. Commit
+    // 10. Commit
     tx.commit().await?;
 
     Ok(Json(GuestBillResponse {
@@ -271,10 +309,9 @@ pub async fn create_guest_bill(
         bill_id,
         bill_number: number,
         date: now.date_naive().to_string(),
-        amount: service.price,
+        amount: total_amount,
         is_paid: false,
-        service_name: service.name,
-        vouchers,
+        lines: response_lines,
     }))
 }
 
@@ -301,15 +338,11 @@ pub async fn get_guest_bill(
         billing_date: chrono::NaiveDate,
         amount: f64,
         is_paid: bool,
-        service_name: Option<String>,
     }
 
     let row = sqlx::query_as::<_, GuestBillRow>(
         r#"
-        SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid,
-               (SELECT s.name FROM billjobs_billline bl
-                JOIN portal_service s ON s.external_service_id = bl.service_id
-                WHERE bl.bill_id = b.id LIMIT 1) AS service_name
+        SELECT b.id, b.number, b.billing_date, b.amount, b."isPaid" AS is_paid
         FROM billjobs_bill b
         JOIN portal_guest_bill gb ON gb.bill_id = b.id
         WHERE gb.guest_token = $1
@@ -320,7 +353,7 @@ pub async fn get_guest_bill(
     .await?
     .ok_or(AppError::NotFound)?;
 
-    let vouchers = fetch_guest_vouchers(&state.db, row.id).await?;
+    let lines = fetch_guest_bill_lines(&state.db, row.id).await?;
 
     Ok(Json(GuestBillResponse {
         guest_token: token.to_string(),
@@ -329,32 +362,60 @@ pub async fn get_guest_bill(
         date: row.billing_date.to_string(),
         amount: row.amount,
         is_paid: row.is_paid,
-        service_name: row.service_name.unwrap_or_default(),
-        vouchers,
+        lines,
     }))
 }
 
-async fn fetch_guest_vouchers(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<GuestVoucherResponse>, AppError> {
+async fn fetch_guest_bill_lines(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<GuestBillLineResponse>, AppError> {
+    #[derive(FromRow)]
+    struct LineRow {
+        line_id: i32,
+        service_name: Option<String>,
+        quantity: i32,
+    }
+
     #[derive(FromRow)]
     struct VRow {
+        billline_id: i32,
         unify_id: String,
         code: String,
         duration: i32,
         status: String,
     }
 
-    let rows = sqlx::query_as::<_, VRow>(
-        "SELECT unify_id, code, duration, status FROM portal_voucher WHERE bill_id = $1",
+    let line_rows = sqlx::query_as::<_, LineRow>(
+        r#"
+        SELECT bl.id AS line_id, bl.quantity::int4 AS quantity, s.name AS service_name
+        FROM billjobs_billline bl
+        LEFT JOIN portal_service s ON s.external_service_id = bl.service_id
+        WHERE bl.bill_id = $1
+        "#,
     )
     .bind(bill_id)
     .fetch_all(db)
     .await?;
 
-    Ok(rows.into_iter().map(|r| GuestVoucherResponse {
-        unify_id: r.unify_id,
-        code: format_code(&r.code),
-        duration: r.duration,
-        status: r.status,
+    let voucher_rows = sqlx::query_as::<_, VRow>(
+        "SELECT billline_id, unify_id, code, duration, status FROM portal_voucher WHERE bill_id = $1",
+    )
+    .bind(bill_id)
+    .fetch_all(db)
+    .await?;
+
+    let mut vouchers_by_line: std::collections::HashMap<i32, Vec<GuestVoucherResponse>> = std::collections::HashMap::new();
+    for v in voucher_rows {
+        vouchers_by_line.entry(v.billline_id).or_default().push(GuestVoucherResponse {
+            unify_id: v.unify_id,
+            code: format_code(&v.code),
+            duration: v.duration,
+            status: v.status,
+        });
+    }
+
+    Ok(line_rows.into_iter().map(|l| GuestBillLineResponse {
+        service_name: l.service_name.unwrap_or_default(),
+        quantity: l.quantity,
+        vouchers: vouchers_by_line.remove(&l.line_id).unwrap_or_default(),
     }).collect())
 }
 

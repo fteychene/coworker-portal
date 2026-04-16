@@ -15,6 +15,9 @@ pub enum AppError {
     #[error("Unauthorized")]
     #[allow(dead_code)]
     Unauthorized,
+
+    #[error("Bad request: {0}")]
+    BadRequest(String),
 }
 
 impl IntoResponse for AppError {
@@ -24,6 +27,7 @@ impl IntoResponse for AppError {
             AppError::Unify(_) => StatusCode::BAD_GATEWAY,
             AppError::NotFound => StatusCode::NOT_FOUND,
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
+            AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
         };
         (status, self.to_string()).into_response()
     }

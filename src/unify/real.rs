@@ -46,6 +46,7 @@ struct UnifyVoucherDto {
     id: String,
     code: String,
     duration: i32,       // minutes
+    note: String,
     status: String,
     status_expires: Option<i64>,
 }
@@ -108,7 +109,7 @@ impl UnifyClient for RealUnifyClient {
             .json().await?;
 
         let vouchers = list_resp.data.into_iter()
-            .filter(|v| v.id.starts_with(&req.note) || true) // note is on the voucher object
+            .filter(|v| v.note.eq(&req.note))
             .map(|v| UnifyVoucher {
                 unify_id: v.id,
                 code: v.code,

@@ -15,6 +15,12 @@ const GuestVoucherSchema = z.object({
   status: z.string(),
 })
 
+const GuestBillLineSchema = z.object({
+  service_name: z.string(),
+  quantity: z.number(),
+  vouchers: z.array(GuestVoucherSchema),
+})
+
 export const GuestBillResponseSchema = z.object({
   guest_token: z.string(),
   bill_id: z.number(),
@@ -22,8 +28,7 @@ export const GuestBillResponseSchema = z.object({
   date: z.string(),
   amount: z.number(),
   is_paid: z.boolean(),
-  service_name: z.string(),
-  vouchers: z.array(GuestVoucherSchema),
+  lines: z.array(GuestBillLineSchema),
 })
 
 export type GuestBillResponse = z.infer<typeof GuestBillResponseSchema>
@@ -54,7 +59,7 @@ export async function listGuestServices() {
 }
 
 export interface CreateGuestBillRequest {
-  service_id: number
+  lines: { service_id: number; quantity: number }[]
   billing_name?: string
   billing_address?: string
 }

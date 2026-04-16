@@ -5,49 +5,71 @@ import { listGuestServices, createGuestBill } from '../api/guest'
 import { Navbar } from '../components/Navbar'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
-  if (spec.kind === 'Monthly') return `1 voucher — valable jusqu'à fin de mois`
+  if (spec.kind === 'Monthly') return `1 voucher — valable 30 jours`
   return `${spec.amount} voucher${spec.amount > 1 ? 's' : ''} × ${spec.duration}h`
 }
 
 function ServiceCard({
   service,
-  selected,
-  onSelect,
+  quantity,
+  onToggle,
+  onChangeQty,
 }: {
   service: Service
-  selected: boolean
-  onSelect: () => void
+  quantity: number   // 0 = not selected
+  onToggle: () => void
+  onChangeQty: (q: number) => void
 }) {
+  const selected = quantity > 0
   return (
-    <label className="cursor-pointer">
-      <input
-        type="radio"
-        name="service"
-        className="sr-only"
-        checked={selected}
-        onChange={onSelect}
-      />
-      <div
-        className={`card border-2 transition-all ${
-          selected
-            ? 'border-primary bg-primary/5'
-            : 'border-base-200 bg-base-100 hover:border-base-300'
-        }`}
-      >
-        <div className="card-body p-4 gap-1">
-          <div className="flex items-start justify-between gap-2">
-            <h3 className="font-semibold text-base">{service.name}</h3>
-            <span className="text-lg font-bold text-primary whitespace-nowrap">
-              {service.price.toFixed(2)} €
+    <div
+      className={`card border-2 transition-all cursor-pointer ${
+        selected ? 'border-primary bg-primary/5' : 'border-base-200 bg-base-100 hover:border-base-300'
+      }`}
+      onClick={onToggle}
+    >
+      <div className="card-body p-4 gap-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className={`w-5 h-5 rounded border-2 shrink-0 flex items-center justify-center text-xs font-bold transition-colors ${
+              selected ? 'border-primary bg-primary text-primary-content' : 'border-base-300'
+            }`}>
+              {selected && '✓'}
             </span>
+            <h3 className="font-semibold text-base truncate">{service.name}</h3>
           </div>
-          <p className="text-sm text-base-content/60">{service.description}</p>
-          <p className="text-xs text-base-content/40 mt-1">
-            {voucherSpecLabel(service.voucher_spec)}
-          </p>
+          <span className="text-lg font-bold text-primary whitespace-nowrap shrink-0">
+            {service.price.toFixed(2)} €
+          </span>
         </div>
+        <p className="text-sm text-base-content/60 pl-7">{service.description}</p>
+        <p className="text-xs text-base-content/40 mt-0.5 pl-7">{voucherSpecLabel(service.voucher_spec)}</p>
+
+        {selected && (
+          <div
+            className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-base-200"
+            onClick={e => e.stopPropagation()}
+          >
+            <span className="text-xs text-base-content/50 mr-auto pl-7">Quantité</span>
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost btn-circle"
+              onClick={() => onChangeQty(quantity - 1)}
+            >
+              −
+            </button>
+            <span className="w-8 text-center font-mono font-semibold text-sm">{quantity}</span>
+            <button
+              type="button"
+              className="btn btn-xs btn-ghost btn-circle"
+              onClick={() => onChangeQty(quantity + 1)}
+            >
+              +
+            </button>
+          </div>
+        )}
       </div>
-    </label>
+    </div>
   )
 }
 
@@ -55,7 +77,8 @@ export function GuestBuy() {
   const navigate = useNavigate()
   const [services, setServices] = useState<Service[]>([])
   const [loadingServices, setLoadingServices] = useState(true)
-  const [selectedId, setSelectedId] = useState<number | null>(null)
+  // Map: service_id → quantity (absent = not selected)
+  const [quantities, setQuantities] = useState<Map<number, number>>(new Map())
   const [billingName, setBillingName] = useState('')
   const [billingAddress, setBillingAddress] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -63,23 +86,39 @@ export function GuestBuy() {
 
   useEffect(() => {
     listGuestServices()
-      .then(s => {
-        setServices(s)
-        if (s.length > 0) setSelectedId(s[0].id)
-      })
+      .then(s => setServices(s))
       .catch(() => setError('Impossible de charger les services.'))
       .finally(() => setLoadingServices(false))
   }, [])
 
+  const toggleService = (id: number) => {
+    setQuantities(prev => {
+      const next = new Map(prev)
+      if (next.has(id)) next.delete(id)
+      else next.set(id, 1)
+      return next
+    })
+  }
+
+  const changeQty = (id: number, qty: number) => {
+    setQuantities(prev => {
+      const next = new Map(prev)
+      if (qty <= 0) next.delete(id)
+      else next.set(id, qty)
+      return next
+    })
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (selectedId === null) return
+    if (quantities.size === 0) return
 
     setSubmitting(true)
     setError(null)
     try {
+      const lines = Array.from(quantities.entries()).map(([service_id, quantity]) => ({ service_id, quantity }))
       const result = await createGuestBill({
-        service_id: selectedId,
+        lines,
         billing_name: billingName || undefined,
         billing_address: billingAddress || undefined,
       })
@@ -91,7 +130,8 @@ export function GuestBuy() {
     }
   }
 
-  const selected = services.find(s => s.id === selectedId) ?? null
+  const selectedServices = services.filter(s => quantities.has(s.id))
+  const total = selectedServices.reduce((sum, s) => sum + s.price * (quantities.get(s.id) ?? 1), 0)
 
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
@@ -106,9 +146,7 @@ export function GuestBuy() {
         </div>
 
         {error && (
-          <div role="alert" className="alert alert-error mb-4">
-            <span>{error}</span>
-          </div>
+          <div role="alert" className="alert alert-error mb-4"><span>{error}</span></div>
         )}
 
         {loadingServices ? (
@@ -124,12 +162,14 @@ export function GuestBuy() {
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="flex flex-col gap-3">
+              <p className="text-xs text-base-content/40">Sélectionnez un ou plusieurs services</p>
               {services.map(service => (
                 <ServiceCard
                   key={service.id}
                   service={service}
-                  selected={selectedId === service.id}
-                  onSelect={() => setSelectedId(service.id)}
+                  quantity={quantities.get(service.id) ?? 0}
+                  onToggle={() => toggleService(service.id)}
+                  onChangeQty={q => changeQty(service.id, q)}
                 />
               ))}
             </div>
@@ -167,18 +207,23 @@ export function GuestBuy() {
                 <div>
                   <p className="text-sm text-base-content/50">Total TTC</p>
                   <p className="text-2xl font-bold text-primary">
-                    {selected ? `${selected.price.toFixed(2)} €` : '—'}
+                    {quantities.size > 0 ? `${total.toFixed(2)} €` : '—'}
                   </p>
+                  {selectedServices.length > 0 && (
+                    <p className="text-xs text-base-content/40 mt-0.5">
+                      {selectedServices.map(s => {
+                        const q = quantities.get(s.id) ?? 1
+                        return q > 1 ? `${q}× ${s.name}` : s.name
+                      }).join(' + ')}
+                    </p>
+                  )}
                 </div>
                 <button
                   type="submit"
                   className="btn btn-primary"
-                  disabled={selectedId === null || submitting}
+                  disabled={quantities.size === 0 || submitting}
                 >
-                  {submitting
-                    ? <span className="loading loading-spinner loading-sm" />
-                    : 'Confirmer & acheter'
-                  }
+                  {submitting ? <span className="loading loading-spinner loading-sm" /> : 'Confirmer & acheter'}
                 </button>
               </div>
             </div>

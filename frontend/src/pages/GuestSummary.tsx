@@ -27,8 +27,10 @@ export function GuestSummary() {
       .then(b => {
         setBill(b)
         const statusMap = new Map<string, string>()
-        for (const v of b.vouchers) {
-          statusMap.set(v.unify_id, v.status)
+        for (const line of b.lines) {
+          for (const v of line.vouchers) {
+            statusMap.set(v.unify_id, v.status)
+          }
         }
         setVoucherStatuses(statusMap)
       })
@@ -53,12 +55,14 @@ export function GuestSummary() {
     if (!bill) return
     setDownloadingPdf(true)
     try {
-      const entries: VoucherStatusEntry[] = bill.vouchers.map(v => ({
-        unify_id: v.unify_id,
-        code: v.code,
-        duration: v.duration,
-        status: voucherStatuses.get(v.unify_id) ?? v.status,
-      }))
+      const entries: VoucherStatusEntry[] = bill.lines.flatMap(line =>
+        line.vouchers.map(v => ({
+          unify_id: v.unify_id,
+          code: v.code,
+          duration: v.duration,
+          status: voucherStatuses.get(v.unify_id) ?? v.status,
+        }))
+      )
       await generateVoucherPdf(bill.bill_number, entries)
     } catch {
       // silently ignore
@@ -80,7 +84,8 @@ export function GuestSummary() {
   }
 
   const { invoice_available } = useStatus()
-  const hasValidVoucher = bill?.vouchers.some(
+  const allVouchers = bill?.lines.flatMap(l => l.vouchers) ?? []
+  const hasValidVoucher = allVouchers.some(
     v => (voucherStatuses.get(v.unify_id) ?? v.status) === 'Valid'
   )
 
@@ -123,7 +128,12 @@ export function GuestSummary() {
             <div className="flex items-start justify-between">
               <div>
                 <p className="font-mono font-semibold">{bill.bill_number}</p>
-                <p className="text-sm text-base-content/60">{bill.service_name}</p>
+                <p className="text-sm text-base-content/60">
+                  {bill.lines
+                    .filter(l => l.service_name)
+                    .map(l => l.quantity > 1 ? `${l.quantity}× ${l.service_name}` : l.service_name)
+                    .join(', ')}
+                </p>
                 <p className="text-xs text-base-content/40 mt-0.5">{bill.date}</p>
               </div>
               <div className="text-right">
@@ -185,7 +195,7 @@ export function GuestSummary() {
             </div>
 
             <div className="flex flex-wrap gap-3">
-              {bill.vouchers.map((v, i) => {
+              {allVouchers.map((v, i) => {
                 const status = voucherStatuses.get(v.unify_id) ?? v.status
                 const isExpired = status === 'Expired' || status === 'Used'
                 return (

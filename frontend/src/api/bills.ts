@@ -10,29 +10,25 @@ const VoucherSchema = z.object({
   status: z.string(),
 })
 
-const ManagedBillSchema = z.object({
-  kind: z.literal('Managed'),
+const BillLineSchema = z.object({
   id: z.number(),
-  number: z.string(),
-  date: z.string(),
-  amount: z.number(),
-  is_paid: z.boolean(),
-  service_id: z.number(),
+  service_id: z.number().nullable(),
+  quantity: z.number(),
   vouchers: z.array(VoucherSchema),
 })
 
-const UnmanagedBillSchema = z.object({
-  kind: z.literal('Unmanaged'),
+export const BillSchema = z.object({
   id: z.number(),
   number: z.string(),
   date: z.string(),
   amount: z.number(),
   is_paid: z.boolean(),
+  lines: z.array(BillLineSchema),
 })
 
-export const BillSchema = z.discriminatedUnion('kind', [ManagedBillSchema, UnmanagedBillSchema])
 export type Bill = z.infer<typeof BillSchema>
-export type ManagedBill = z.infer<typeof ManagedBillSchema>
+export type BillLine = z.infer<typeof BillLineSchema>
+export type Voucher = z.infer<typeof VoucherSchema>
 
 const ListBillsResponseSchema = z.object({
   total: z.number(),
@@ -51,10 +47,10 @@ export interface BillsQuery {
   date_to?: string
 }
 
-export async function createBill(serviceId: number): Promise<Bill> {
+export async function createBill(lines: { service_id: number; quantity: number }[]): Promise<Bill> {
   const raw = await apiFetch<unknown>('/api/bills', {
     method: 'POST',
-    body: JSON.stringify({ service_id: serviceId }),
+    body: JSON.stringify({ lines }),
   })
   return BillSchema.parse(raw)
 }
