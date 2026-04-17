@@ -22,6 +22,11 @@ if [ ! -f "${ENV_FILE}" ]; then
     exit 1
 fi
 
+echo "==> Stopping service if running..."
+if systemctl is-active --quiet "${SERVICE_NAME}"; then
+    systemctl stop "${SERVICE_NAME}"
+fi
+
 echo "==> Creating user and directories..."
 if ! id "${SERVICE_NAME}" &>/dev/null; then
     useradd -r -s /sbin/nologin "${SERVICE_NAME}"
@@ -30,6 +35,7 @@ mkdir -p "${INSTALL_DIR}" "$(dirname "${ENV_FILE}")"
 
 echo "==> Installing binary and assets..."
 cp "${RELEASE_DIR}/coworker-portal" "${INSTALL_DIR}/"
+rm -Rf "${INSTALL_DIR}/public"
 cp -r "${RELEASE_DIR}/public" "${INSTALL_DIR}/public"
 chown -R "${SERVICE_NAME}:${SERVICE_NAME}" "${INSTALL_DIR}"
 

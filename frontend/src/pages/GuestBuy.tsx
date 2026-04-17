@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { type Service, type VoucherSpec } from '../api/services'
 import { listGuestServices, createGuestBill } from '../api/guest'
+import { ApiError } from '../api/client'
 import { Navbar } from '../components/Navbar'
 
 function voucherSpecLabel(spec: VoucherSpec): string {
@@ -12,11 +13,13 @@ function voucherSpecLabel(spec: VoucherSpec): string {
 function ServiceCard({
   service,
   quantity,
+  allowMultiple,
   onToggle,
   onChangeQty,
 }: {
   service: Service
   quantity: number   // 0 = not selected
+  allowMultiple: boolean
   onToggle: () => void
   onChangeQty: (q: number) => void
 }) {
@@ -45,7 +48,7 @@ function ServiceCard({
         <p className="text-sm text-base-content/60 pl-7">{service.description}</p>
         <p className="text-xs text-base-content/40 mt-0.5 pl-7">{voucherSpecLabel(service.voucher_spec)}</p>
 
-        {selected && (
+        {selected && allowMultiple && (
           <div
             className="flex items-center justify-end gap-2 mt-2 pt-2 border-t border-base-200"
             onClick={e => e.stopPropagation()}
@@ -123,21 +126,29 @@ export function GuestBuy() {
         billing_address: billingAddress || undefined,
       })
       navigate(`/buy/summary/${result.guest_token}`)
-    } catch {
-      setError('Échec de la création de la facture. Veuillez réessayer.')
+    } catch (e) {
+      const reason = e instanceof ApiError && e.status === 502
+        ? 'Erreur lors de la création des vouchers. Merci de réessayer plus tard ou de contacter #commission-informatique sur Slack.'
+        : 'Veuillez réessayer.'
+      setError(`Erreur à la création de la facture\u00a0: ${reason}`)
     } finally {
       setSubmitting(false)
     }
   }
 
+  const allowsMultiple = (s: Service) =>
+    s.voucher_spec.kind === 'Book' && s.voucher_spec.amount > 0
+  const singleServices = services.filter(s => !allowsMultiple(s))
+  const multiServices = services.filter(s => allowsMultiple(s))
   const selectedServices = services.filter(s => quantities.has(s.id))
   const total = selectedServices.reduce((sum, s) => sum + s.price * (quantities.get(s.id) ?? 1), 0)
+  const hasBothColumns = singleServices.length > 0 && multiServices.length > 0
 
   return (
     <div className="min-h-screen bg-base-200 flex flex-col">
       <Navbar />
 
-      <main className="flex-1 p-4 md:p-8 max-w-2xl mx-auto w-full">
+      <main className="flex-1 p-4 md:p-8 max-w-4xl mx-auto w-full">
         <div className="mb-6">
           <h2 className="text-xl font-bold">Acheter un accès</h2>
           <p className="text-sm text-base-content/50 mt-1">
@@ -161,17 +172,41 @@ export function GuestBuy() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            <div className="flex flex-col gap-3">
-              <p className="text-xs text-base-content/40">Sélectionnez un ou plusieurs services</p>
-              {services.map(service => (
-                <ServiceCard
-                  key={service.id}
-                  service={service}
-                  quantity={quantities.get(service.id) ?? 0}
-                  onToggle={() => toggleService(service.id)}
-                  onChangeQty={q => changeQty(service.id, q)}
-                />
-              ))}
+            <div className={`grid gap-6 ${hasBothColumns ? 'md:grid-cols-2' : 'grid-cols-1'}`}>
+              {singleServices.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-medium text-base-content/40 uppercase tracking-wide">
+                    Accès mensuel
+                  </p>
+                  {singleServices.map(service => (
+                    <ServiceCard
+                      key={service.id}
+                      service={service}
+                      quantity={quantities.get(service.id) ?? 0}
+                      allowMultiple={false}
+                      onToggle={() => toggleService(service.id)}
+                      onChangeQty={q => changeQty(service.id, q)}
+                    />
+                  ))}
+                </div>
+              )}
+              {multiServices.length > 0 && (
+                <div className="flex flex-col gap-3">
+                  <p className="text-xs font-medium text-base-content/40 uppercase tracking-wide">
+                    Carnets de vouchers
+                  </p>
+                  {multiServices.map(service => (
+                    <ServiceCard
+                      key={service.id}
+                      service={service}
+                      quantity={quantities.get(service.id) ?? 0}
+                      allowMultiple={allowsMultiple(service)}
+                      onToggle={() => toggleService(service.id)}
+                      onChangeQty={q => changeQty(service.id, q)}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             <div className="card bg-base-100 shadow-sm">

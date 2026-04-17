@@ -10,6 +10,7 @@ pub struct RealUnifyClient {
     client: reqwest::Client,
     base_url: String,
     site: String,
+    config: UnifyConfig,
 }
 
 impl RealUnifyClient {
@@ -23,6 +24,7 @@ impl RealUnifyClient {
             client,
             base_url: config.base_url.clone(),
             site: config.site.clone(),
+            config: config.clone(),
         };
         this.login(&config.username, &config.password).await?;
         Ok(this)
@@ -35,8 +37,23 @@ impl RealUnifyClient {
             .send()
             .await?
             .error_for_status()?;
-        tracing::info!("Unify login successful as {username}" );
+        tracing::info!("Unify login successful as {username}");
         Ok(())
+    }
+
+    /// Send a request, re-login once on 401 and retry.
+    async fn send_with_retry<F>(&self, build: F) -> Result<reqwest::Response>
+    where
+        F: Fn() -> reqwest::RequestBuilder,
+    {
+        let resp = build().send().await?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            tracing::info!("Unify session expired, re-authenticating");
+            self.login(&self.config.username, &self.config.password).await?;
+            Ok(build().send().await?.error_for_status()?)
+        } else {
+            Ok(resp.error_for_status()?)
+        }
     }
 }
 
@@ -82,18 +99,18 @@ fn map_status(dto: &UnifyVoucherDto) -> VoucherStatus {
 impl UnifyClient for RealUnifyClient {
     async fn create_vouchers(&self, req: CreateVouchersRequest) -> Result<Vec<UnifyVoucher>> {
         // Step 1: create the batch, get create_time
-        let create_resp: CreateVoucherResponse = self.client
-            .post(format!("{}/api/s/{}/cmd/hotspot", self.base_url, self.site))
-            .json(&serde_json::json!({
-                "cmd": "create-voucher",
-                "n": req.n,
-                "quota": req.quota,
-                "expire_number": req.duration_hours,
-                "expire_unit": 60,  // hour multiplier
-                "note": req.note,
-            }))
-            .send().await?
-            .error_for_status()?
+        let body = serde_json::json!({
+            "cmd": "create-voucher",
+            "n": req.n,
+            "quota": req.quota,
+            "expire_number": req.duration_hours,
+            "expire_unit": 60,  // hour multiplier
+            "note": req.note,
+        });
+        let url = format!("{}/api/s/{}/cmd/hotspot", self.base_url, self.site);
+        let create_resp: CreateVoucherResponse = self
+            .send_with_retry(|| self.client.post(&url).json(&body))
+            .await?
             .json().await?;
 
         let create_time = create_resp.data.first()
@@ -101,11 +118,11 @@ impl UnifyClient for RealUnifyClient {
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
 
         // Step 2: retrieve the batch by create_time and filter by note
-        let list_resp: VoucherListResponse = self.client
-            .post(format!("{}/api/s/{}/stat/voucher", self.base_url, self.site))
-            .json(&serde_json::json!({ "create_time": create_time }))
-            .send().await?
-            .error_for_status()?
+        let list_body = serde_json::json!({ "create_time": create_time });
+        let list_url = format!("{}/api/s/{}/stat/voucher", self.base_url, self.site);
+        let list_resp: VoucherListResponse = self
+            .send_with_retry(|| self.client.post(&list_url).json(&list_body))
+            .await?
             .json().await?;
 
         let vouchers = list_resp.data.into_iter()
@@ -127,11 +144,11 @@ impl UnifyClient for RealUnifyClient {
         _note: &str,
         unify_ids: &[String],
     ) -> Result<HashMap<String, VoucherStatus>> {
-        let resp: VoucherListResponse = self.client
-            .post(format!("{}/api/s/{}/stat/voucher", self.base_url, self.site))
-            .json(&serde_json::json!({ "create_time": create_time }))
-            .send().await?
-            .error_for_status()?
+        let body = serde_json::json!({ "create_time": create_time });
+        let url = format!("{}/api/s/{}/stat/voucher", self.base_url, self.site);
+        let resp: VoucherListResponse = self
+            .send_with_retry(|| self.client.post(&url).json(&body))
+            .await?
             .json().await?;
 
         let id_set: std::collections::HashSet<&str> =

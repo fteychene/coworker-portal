@@ -29,6 +29,7 @@ impl IntoResponse for AppError {
             AppError::Unauthorized => StatusCode::UNAUTHORIZED,
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
         };
-        (status, self.to_string()).into_response()
+        let body = axum::Json(serde_json::json!({ "error": self.to_string() }));
+        (status, body).into_response()
     }
 }
