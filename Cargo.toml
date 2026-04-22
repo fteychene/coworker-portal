@@ -31,3 +31,6 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 utoipa = { version = "5", features = ["chrono"] }
 utoipa-axum = "0.2"
 axum-swagger-ui = "0.3.0"
+tokio-cron-scheduler = "0.15"
+chrono-tz = "0.10.4"
+croner = "3.0.1"
