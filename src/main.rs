@@ -14,6 +14,7 @@ mod domain;
 mod error;
 mod openapi;
 mod routes;
+mod tasks;
 mod unify;
 
 #[derive(Clone)]
@@ -81,6 +82,8 @@ async fn main() -> Result<()> {
         superuser_session: Arc::new(RwLock::new(superuser_session)),
         config: Arc::new(config.clone()),
     };
+
+    tasks::start(state.clone(), config.voucher_sync_interval_secs);
 
     let (router, api) = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         .nest("/api/auth", auth::router())

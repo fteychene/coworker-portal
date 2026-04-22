@@ -16,6 +16,7 @@ pub struct Config {
     pub django_superuser_username: String,
     pub django_superuser_password: String,
     pub unify: UnifyConfig,
+    pub voucher_sync_interval_secs: u64,
 }
 
 #[derive(Clone)]
@@ -62,6 +63,10 @@ impl Config {
                 .unwrap_or_default(),
             django_superuser_password: std::env::var("DJANGO_SUPERUSER_PASSWORD")
                 .unwrap_or_default(),
+            voucher_sync_interval_secs: std::env::var("VOUCHER_SYNC_INTERVAL_SECS")
+                .unwrap_or_else(|_| "3600".into())
+                .parse()
+                .context("VOUCHER_SYNC_INTERVAL_SECS must be a number")?,
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock
