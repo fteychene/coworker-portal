@@ -346,6 +346,26 @@ A visitor can buy a service without a coworking account via a public `/buy` rout
 | `DJANGO_SUPERUSER_USERNAME` | _(empty)_ | Django superuser for guest PDF proxy |
 | `DJANGO_SUPERUSER_PASSWORD` | _(empty)_ | Django superuser for guest PDF proxy |
 
+### Scheduled voucher sync
+A background task runs on a configurable cron schedule and refreshes the status of all locally-stored `Valid` vouchers against Unify.
+
+**Purpose:** sessions can expire or vouchers can be used without any user triggering a manual check. This task ensures the local `portal_voucher.status` column stays consistent with the Unify source of truth even without user interaction.
+
+**Algorithm:**
+1. Load all `portal_voucher` rows with `status = 'Valid'`
+2. Group them by `unify_create_time` (one Unify API call per batch)
+3. For each batch: call `GET /api/s/{site}/stat/voucher` with the batch's `create_time`
+4. Update each voucher's local `status` from the Unify response
+5. Vouchers absent from the Unify response are marked `Expired` (revoked upstream)
+
+**Scheduling:** configured via cron expression; default runs Monday–Friday, every hour from 09:00 to 19:00 Europe/Paris time (`0 0 9-19 * * 1-5`, 6-field format with seconds). The expression is validated at startup — an invalid expression prevents the server from starting.
+
+**Environment variable:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VOUCHER_SYNC_CRON` | `0 0 9-19 * * 1-5` | 6-field cron expression (sec min hour dom month dow) for the voucher sync task, evaluated in Europe/Paris timezone |
+
 **Guest Summary Page (`/buy/summary/:guestToken`):**
 - Bill number, date, service name, amount
 - Voucher cards with status (seeded from creation response)
