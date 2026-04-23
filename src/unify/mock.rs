@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use rand::Rng;
 
 use crate::domain::VoucherStatus;
-use super::{CreateVouchersRequest, UnifyClient, UnifyVoucher};
+use super::{ActiveGuest, CreateVouchersRequest, UnifyClient, UnifyVoucher};
 
 pub struct MockUnifyClient;
 
@@ -45,5 +45,10 @@ impl UnifyClient for MockUnifyClient {
                 (id.clone(), status)
             })
             .collect())
+    }
+
+    async fn get_active_guests(&self, _within_hours: u32) -> Result<Vec<ActiveGuest>> {
+        tracing::debug!("mock: get_active_guests — returning empty list");
+        Ok(vec![])
     }
 }

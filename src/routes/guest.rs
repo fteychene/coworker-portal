@@ -69,6 +69,7 @@ pub struct GuestVoucherResponse {
     pub code: String,
     pub duration: i32,
     pub status: String,
+    pub active_days_count: i32,
 }
 
 #[derive(Serialize, ToSchema, Clone)]
@@ -291,6 +292,7 @@ pub async fn create_guest_bill(
                 code: format_code(&uv.code),
                 duration: uv.duration,
                 status: VoucherStatus::Valid.as_str().to_string(),
+                active_days_count: 0,
             });
         }
 
@@ -381,6 +383,7 @@ async fn fetch_guest_bill_lines(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<G
         code: String,
         duration: i32,
         status: String,
+        active_days_count: i32,
     }
 
     let line_rows = sqlx::query_as::<_, LineRow>(
@@ -396,7 +399,7 @@ async fn fetch_guest_bill_lines(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<G
     .await?;
 
     let voucher_rows = sqlx::query_as::<_, VRow>(
-        "SELECT billline_id, unify_id, code, duration, status FROM portal_voucher WHERE bill_id = $1",
+        "SELECT billline_id, unify_id, code, duration, status, cardinality(active_days) AS active_days_count FROM portal_voucher WHERE bill_id = $1",
     )
     .bind(bill_id)
     .fetch_all(db)
@@ -409,6 +412,7 @@ async fn fetch_guest_bill_lines(db: &sqlx::PgPool, bill_id: i32) -> Result<Vec<G
             code: format_code(&v.code),
             duration: v.duration,
             status: v.status,
+            active_days_count: v.active_days_count,
         });
     }
 

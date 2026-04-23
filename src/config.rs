@@ -17,6 +17,7 @@ pub struct Config {
     pub django_superuser_password: String,
     pub unify: UnifyConfig,
     pub voucher_sync_cron: String,
+    pub monthly_usage_cron: String,
 }
 
 #[derive(Clone)]
@@ -65,6 +66,8 @@ impl Config {
                 .unwrap_or_default(),
             voucher_sync_cron: std::env::var("VOUCHER_SYNC_CRON")
                 .unwrap_or_else(|_| "0 0 9-19 * * 1-5".into()),
+            monthly_usage_cron: std::env::var("MONTHLY_USAGE_CRON")
+                .unwrap_or_else(|_| "0 0 9-19 * * *".into()),
             unify: UnifyConfig {
                 mode: if std::env::var("UNIFY_MOCK").as_deref() == Ok("true") {
                     UnifyMode::Mock

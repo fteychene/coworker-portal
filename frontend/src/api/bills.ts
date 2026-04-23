@@ -8,6 +8,7 @@ const VoucherSchema = z.object({
   code: z.string(),
   duration: z.number(),
   status: z.string(),
+  active_days_count: z.number(),
 })
 
 const BillLineSchema = z.object({

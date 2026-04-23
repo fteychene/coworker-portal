@@ -83,7 +83,7 @@ async fn main() -> Result<()> {
         config: Arc::new(config.clone()),
     };
 
-    tasks::start(state.clone(), &config.voucher_sync_cron).await?;
+    tasks::start(state.clone(), &config.voucher_sync_cron, &config.monthly_usage_cron).await?;
 
     let (router, api) = OpenApiRouter::with_openapi(openapi::ApiDoc::openapi())
         .nest("/api/auth", auth::router())

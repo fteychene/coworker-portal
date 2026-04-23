@@ -225,6 +225,9 @@ export function GuestSummary() {
                         {v.code}
                       </p>
                       <p className="text-xs text-base-content/50">{v.duration}h</p>
+                      {v.active_days_count > 0 && (
+                        <p className="text-xs text-primary/70 font-medium">{v.active_days_count} jour{v.active_days_count > 1 ? 's' : ''} actif{v.active_days_count > 1 ? 's' : ''}</p>
+                      )}
                     </div>
                   </div>
                 )

@@ -172,6 +172,7 @@ This app owns the schema and data for:
 | `created_at` | timestamptz | |
 | `duration` | int4 | hours |
 | `status` | varchar(10) | mutable; updated by validity check |
+| `active_days` | date[] | append-only diary of dates the voucher had at least one active guest; empty array for non-monthly vouchers |
 
 **`portal_guest_bill`** — guest token → bill mapping
 | Column | Type | Notes |
@@ -365,6 +366,28 @@ A background task runs on a configurable cron schedule and refreshes the status 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `VOUCHER_SYNC_CRON` | `0 0 9-19 * * 1-5` | 6-field cron expression (sec min hour dom month dow) for the voucher sync task, evaluated in Europe/Paris timezone |
+
+### Monthly voucher usage diary
+A daily background task tracks which days each monthly voucher had at least one device actively connected via Unify.
+
+**Purpose:** provide a forward-looking record of how many days a monthly voucher was actually used. The count of active days is `cardinality(active_days)` on the `portal_voucher` row — no separate aggregation needed. Non-monthly vouchers carry an empty array by default, leaving the door open to extend tracking to other types later.
+
+**Constraint:** the diary is forward-only. Unify's guest API returns current or recent state only; days before the first task run cannot be reconstructed retroactively.
+
+**Algorithm:**
+1. Load all `portal_voucher.unify_id` values for vouchers linked to a `Monthly` service (via `billjobs_billline → portal_service WHERE kind = 'Monthly'`)
+2. Call `POST /api/s/{site}/stat/guest` with `{ "within": 24 }` to get all guest devices seen in the last 24 hours
+3. Filter to guests whose `voucher_id` matches one of our monthly voucher IDs
+4. Group by `voucher_id`, collecting distinct MAC addresses (phone + laptop count as one voucher used)
+5. For each active voucher: append today's date (Europe/Paris) to `active_days` — the update is idempotent (skips the append if the date is already present)
+
+**Scheduling:** runs every hour from 09:00 to 19:00 Europe/Paris time by default (`0 0 9-19 * * *`). Each run queries only connections since today's midnight (not the previous 24 hours), so running multiple times per day is safe and idempotent.
+
+**Environment variable:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MONTHLY_USAGE_CRON` | `0 0 9-19 * * *` | 6-field cron expression for the monthly usage diary task, evaluated in Europe/Paris timezone |
 
 **Guest Summary Page (`/buy/summary/:guestToken`):**
 - Bill number, date, service name, amount

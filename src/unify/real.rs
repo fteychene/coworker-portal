@@ -58,6 +58,17 @@ impl RealUnifyClient {
 }
 
 #[derive(Deserialize, Debug)]
+struct GuestDto {
+    mac: String,
+    voucher_id: Option<String>,
+}
+
+#[derive(Deserialize, Debug)]
+struct GuestListResponse {
+    data: Vec<GuestDto>,
+}
+
+#[derive(Deserialize, Debug)]
 struct UnifyVoucherDto {
     #[serde(rename = "_id")]
     id: String,
@@ -182,5 +193,29 @@ impl UnifyClient for RealUnifyClient {
         }
 
         Ok(map)
+    }
+
+    async fn get_active_guests(&self, within_hours: u32) -> Result<Vec<super::ActiveGuest>> {
+        let body = serde_json::json!({ "within": within_hours });
+        let url = format!("{}/api/s/{}/stat/guest", self.base_url, self.site);
+        tracing::debug!(%url, within_hours, "Querying Unify active guests");
+
+        let resp: GuestListResponse = self
+            .send_with_retry(|| self.client.post(&url).json(&body))
+            .await?
+            .json().await?;
+
+        tracing::debug!(total = resp.data.len(), "Unify active guests response");
+
+        let guests = resp.data.into_iter()
+            .filter_map(|g| {
+                g.voucher_id.map(|vid| {
+                    tracing::debug!(mac = %g.mac, voucher_id = %vid, "Unify active guest");
+                    super::ActiveGuest { voucher_id: vid, mac: g.mac }
+                })
+            })
+            .collect();
+
+        Ok(guests)
     }
 }
