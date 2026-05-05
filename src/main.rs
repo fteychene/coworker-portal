@@ -62,6 +62,8 @@ async fn main() -> Result<()> {
         }
     };
 
+    tracing::info!(smtp_user=&config.smtp.clone().unwrap().username, smtp_pass=&config.smtp.clone().unwrap().password, "Config");
+
     let superuser_session = auth::routes::acquire_django_session(
         &config.django_base_url,
         config.django_accept_invalid_certs,

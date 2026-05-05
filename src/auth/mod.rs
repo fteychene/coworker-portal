@@ -11,7 +11,10 @@ use utoipa_axum::{router::OpenApiRouter, routes};
 use crate::AppState;
 
 pub fn router() -> OpenApiRouter<AppState> {
-    OpenApiRouter::new().routes(routes!(routes::login))
+    OpenApiRouter::new()
+        .routes(routes!(routes::login))
+        .routes(routes!(routes::forgot_password))
+        .routes(routes!(routes::reset_password))
 }
 
 /// Authenticated user extracted from the JWT Bearer token.

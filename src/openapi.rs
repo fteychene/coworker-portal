@@ -32,6 +32,8 @@ impl Modify for SecurityAddon {
     components(schemas(
         crate::auth::routes::LoginRequest,
         crate::auth::routes::LoginResponse,
+        crate::auth::routes::ForgotPasswordRequest,
+        crate::auth::routes::ResetPasswordRequest,
         crate::domain::Service,
         crate::domain::VoucherSpec,
         crate::domain::VoucherStatus,

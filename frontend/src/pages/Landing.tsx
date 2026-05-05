@@ -134,7 +134,10 @@ export function Landing() {
                 )}
               </div>
 
-              <div className="card-actions justify-end mt-1">
+              <div className="card-actions justify-between items-center mt-1">
+                <Link to="/forgot-password" className="text-xs text-base-content/50 hover:text-base-content">
+                  Mot de passe oublié ?
+                </Link>
                 <button
                   type="submit"
                   className="btn btn-primary btn-wide"

@@ -18,6 +18,17 @@ pub struct Config {
     pub unify: UnifyConfig,
     pub voucher_sync_cron: String,
     pub monthly_usage_cron: String,
+    pub smtp: Option<SmtpConfig>,
+    pub app_base_url: String,
+}
+
+#[derive(Clone)]
+pub struct SmtpConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub password: String,
+    pub from_email: String,
 }
 
 #[derive(Clone)]
@@ -82,6 +93,24 @@ impl Config {
                 accept_invalid_certs: std::env::var("UNIFY_ACCEPT_INVALID_CERTS").as_deref()
                     == Ok("true"),
             },
+            smtp: match std::env::var("SMTP_HOST") {
+                Ok(host) => Some(SmtpConfig {
+                    host,
+                    port: std::env::var("SMTP_PORT")
+                        .unwrap_or_else(|_| "587".into())
+                        .parse()
+                        .context("SMTP_PORT must be a number")?,
+                    username: std::env::var("SMTP_USERNAME")
+                        .context("SMTP_USERNAME required when SMTP_HOST is set")?,
+                    password: std::env::var("SMTP_PASSWORD")
+                        .context("SMTP_PASSWORD required when SMTP_HOST is set")?,
+                    from_email: std::env::var("SMTP_FROM_EMAIL")
+                        .context("SMTP_FROM_EMAIL required when SMTP_HOST is set")?,
+                }),
+                Err(_) => None,
+            },
+            app_base_url: std::env::var("APP_BASE_URL")
+                .unwrap_or_else(|_| "http://localhost:5173".into()),
         })
     }
 }

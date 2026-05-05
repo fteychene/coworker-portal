@@ -4,10 +4,12 @@ import { ProtectedRoute } from './components/ProtectedRoute'
 import { ToastProvider } from './lib/toast'
 import { CreateBill } from './pages/CreateBill'
 import { Dashboard } from './pages/Dashboard'
+import { ForgotPassword } from './pages/ForgotPassword'
 import { GuestBuy } from './pages/GuestBuy'
 import { GuestSummary } from './pages/GuestSummary'
 import { Landing } from './pages/Landing'
 import { Profile } from './pages/Profile'
+import { ResetPassword } from './pages/ResetPassword'
 
 function App() {
   return (
@@ -29,6 +31,8 @@ function App() {
         <Route path="/buy" element={<GuestBuy />} />
         <Route path="/buy/summary/:token" element={<GuestSummary />} />
         <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
