@@ -26,11 +26,6 @@ export function Navbar() {
         </Link>
       </div>
       <div className="navbar-end gap-3">
-        {user && (
-          <span className="text-sm text-base-content/60 hidden sm:block">
-            {user.first_name}
-          </span>
-        )}
         <label className="flex items-center gap-1 cursor-pointer" title={theme === 'corporate' ? 'Passer en mode sombre' : 'Passer en mode clair'}>
           <span className="text-sm">☀️</span>
           <input
@@ -42,10 +37,19 @@ export function Navbar() {
           />
           <span className="text-sm">🌙</span>
         </label>
-        {authenticated ? (
-          <button className="btn btn-ghost btn-sm" onClick={handleLogout}>
-            Se déconnecter
-          </button>
+        {authenticated && user ? (
+          <div className="dropdown dropdown-end">
+            <div tabIndex={0} role="button" className="btn btn-ghost btn-sm gap-1">
+              <span className="text-sm">{user.first_name}</span>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3 opacity-60" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box shadow-lg border border-base-200 z-50 w-44 p-1 mt-1">
+              <li><Link to="/profile">Mon profil</Link></li>
+              <li><button onClick={handleLogout}>Se déconnecter</button></li>
+            </ul>
+          </div>
         ) : (
           <Link to="/login" className="btn btn-ghost btn-sm">
             Se connecter

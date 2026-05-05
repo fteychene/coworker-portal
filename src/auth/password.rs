@@ -1,6 +1,20 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
 use pbkdf2::pbkdf2_hmac;
+use rand::{Rng, distributions::Alphanumeric};
 use sha2::Sha256;
+
+const DJANGO_ITERATIONS: u32 = 720_000;
+
+pub fn hash_django_password(raw: &str) -> String {
+    let salt: String = rand::thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(12)
+        .map(char::from)
+        .collect();
+    let mut dk = [0u8; 32];
+    pbkdf2_hmac::<Sha256>(raw.as_bytes(), salt.as_bytes(), DJANGO_ITERATIONS, &mut dk);
+    format!("pbkdf2_sha256${}${}${}", DJANGO_ITERATIONS, salt, STANDARD.encode(dk))
+}
 
 /// Verifies a plaintext password against a Django-encoded password field.
 /// Django format: `pbkdf2_sha256$<iterations>$<salt>$<base64-hash>`
